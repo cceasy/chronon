@@ -20,6 +20,7 @@ import ai.chronon.api
 import ai.chronon.api.Constants
 import ai.chronon.api.DataModel
 import ai.chronon.api.ScalaJavaConversions._
+import org.apache.commons.codec.digest.DigestUtils
 import org.apache.spark.sql.DataFrame
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -31,6 +32,8 @@ import scala.util.Try
 
 case class TopicInfo(name: String, messageBus: String, params: Map[String, String])
 object TopicInfo {
+  @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
+  
   // default message bus is kafka
   // kafka://topic_name/schema=my_schema/host=X/port=Y should parse into TopicInfo(topic_name, kafka, {schema: my_schema, host: X, port Y})
   def parse(topic: String): TopicInfo = {
@@ -42,11 +45,19 @@ object TopicInfo {
       "kafka" -> topic
     }
     assert(rest.nonEmpty, s"invalid topic: $topic")
-    val fields = rest.split("/")
+
+    val escapedSlash = "___SLASH___"
+    val escapedRest = rest.replace("//", escapedSlash)
+    
+    val fields = escapedRest.split("/")
     val topicName = fields.head
     val params = fields.tail.map { f =>
-      val kv = f.split("=", 2); kv.head -> kv.last
+      val kv = f.split("=", 2)
+      val key = kv.head
+      val value = if (kv.length > 1) kv.last.replace(escapedSlash, "/") else ""
+      key -> value
     }.toMap
+    params.foreach { case (k, v) => logger.info(s"topic param: $k -> ${v.substring(0, 5)}*** len=${v.length} md5=${DigestUtils.md5Hex(v)}") }
     TopicInfo(topicName, messageBus, params)
   }
 }
