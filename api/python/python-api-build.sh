@@ -17,9 +17,16 @@
 
 set -o xtrace
 
+# if no enough args
+if [[ $# -lt 3 ]]; then
+  echo "Usage: ./python-api-build.sh <version> <branch> <action>"
+  echo "Example: ./python-api-build.sh 0.1.0 master build"
+  exit 1
+fi
+
 export VERSION=$1
 export BRANCH=$2
-ACTION=$3
+export ACTION=$3
 
 echo "Finding working directory.."
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
