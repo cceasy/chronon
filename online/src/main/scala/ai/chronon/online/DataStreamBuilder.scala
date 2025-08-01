@@ -20,11 +20,11 @@ import ai.chronon.api
 import ai.chronon.api.Constants
 import ai.chronon.api.DataModel
 import ai.chronon.api.ScalaJavaConversions._
-import org.apache.commons.codec.digest.DigestUtils
 import org.apache.spark.sql.DataFrame
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import java.security.MessageDigest
 import scala.collection.Seq
 import scala.util.Failure
 import scala.util.Success
@@ -33,6 +33,12 @@ import scala.util.Try
 case class TopicInfo(name: String, messageBus: String, params: Map[String, String])
 object TopicInfo {
   @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
+
+  private def md5sum(input: String): String = {
+    val md = MessageDigest.getInstance("MD5")
+    val hashBytes = md.digest(input.getBytes("UTF-8"))
+    hashBytes.map("%02x".format(_)).mkString
+  }
   
   // default message bus is kafka
   // kafka://topic_name/schema=my_schema/host=X/port=Y should parse into TopicInfo(topic_name, kafka, {schema: my_schema, host: X, port Y})
@@ -57,7 +63,7 @@ object TopicInfo {
       val value = if (kv.length > 1) kv.last.replace(escapedSlash, "/") else ""
       key -> value
     }.toMap
-    params.foreach { case (k, v) => logger.info(s"topic param: $k -> ${v.substring(0, 5)}*** len=${v.length} md5=${DigestUtils.md5Hex(v)}") }
+    params.foreach { case (k, v) => logger.info(s"topic param: $k -> ${v.substring(0, Math.min(5, v.length))}*** len=${v.length} md5=${md5sum(v)}") }
     TopicInfo(topicName, messageBus, params)
   }
 }

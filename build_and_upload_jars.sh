@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+set -e
+set -x
+
 VERSION=${1:-0.2.0}
 BUCKET=${2:-awx-metric-platform-nonprod-jars}
 BAZEL_BIN_DIR=bazel-bin
