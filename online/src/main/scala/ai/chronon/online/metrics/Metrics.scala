@@ -24,6 +24,9 @@ import io.opentelemetry.api.OpenTelemetry
 import scala.collection.mutable
 
 object Metrics {
+  
+  private val globalMetricPrefix: String = sys.env.getOrElse("METRIC_PREFIX", "risk.mlp.chronon")
+  
   object Environment extends Enumeration {
     type Environment = String
     val MetaDataFetching = "metadata.fetch"
@@ -164,7 +167,7 @@ object Metrics {
 
     def withSuffix(suffixN: String): Context = copy(suffix = (Option(suffix) ++ Seq(suffixN)).mkString("."))
 
-    private val prefixString = environment + Option(suffix).map("." + _).getOrElse("")
+    private val prefixString = globalMetricPrefix + "." + environment + Option(suffix).map("." + _).getOrElse("")
 
     private def prefix(s: String): String =
       new java.lang.StringBuilder(prefixString.length + s.length + 1)
