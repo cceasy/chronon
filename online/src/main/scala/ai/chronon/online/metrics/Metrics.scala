@@ -20,11 +20,13 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.api._
 import io.opentelemetry.api.OpenTelemetry
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.mutable
 
 object Metrics {
-  
+
+  @transient implicit lazy val logger: Logger = LoggerFactory.getLogger(getClass)
   private val globalMetricPrefix: String = sys.env.getOrElse("METRIC_PREFIX", "risk.mlp.chronon")
   
   object Environment extends Enumeration {
@@ -134,6 +136,7 @@ object Metrics {
       // Metrics collection is turned off by default, we explicitly turn on in serving contexts
       val metricsEnabled: Boolean = System.getProperty(MetricsEnabled, "false").toBoolean
       val reporter: String = System.getProperty(MetricsReporter, "otel")
+      logger.info(s"create metrics reporter with enabled: $metricsEnabled, reporter: $reporter")
 
       reporter.toLowerCase match {
         case "otel" | "opentelemetry" =>
@@ -166,8 +169,9 @@ object Metrics {
       extends Serializable {
 
     def withSuffix(suffixN: String): Context = copy(suffix = (Option(suffix) ++ Seq(suffixN)).mkString("."))
-
+    
     private val prefixString = globalMetricPrefix + "." + environment + Option(suffix).map("." + _).getOrElse("")
+    logger.info(s"Create context with prefixString is $prefixString: $this")
 
     private def prefix(s: String): String =
       new java.lang.StringBuilder(prefixString.length + s.length + 1)
