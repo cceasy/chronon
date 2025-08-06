@@ -171,7 +171,6 @@ object Metrics {
     def withSuffix(suffixN: String): Context = copy(suffix = (Option(suffix) ++ Seq(suffixN)).mkString("."))
     
     private val prefixString = globalMetricPrefix + "." + environment + Option(suffix).map("." + _).getOrElse("")
-    logger.info(s"Create context with prefixString is $prefixString: $this")
 
     private def prefix(s: String): String =
       new java.lang.StringBuilder(prefixString.length + s.length + 1)
