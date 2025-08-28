@@ -544,6 +544,21 @@ object Driver {
     }
   }
 
+  object BuildComparisonTable {
+    class Args extends Subcommand("build-comparison-table") with OfflineSubcommand {
+      override def subcommandName() = "build-comparison-table"
+    }
+
+    def run(args: Args): Unit = {
+      val joinConf = parseConf[api.Join](args.confPath())
+      new ConsistencyJob(
+        args.sparkSession,
+        joinConf,
+        args.endDate()
+      ).buildComparisonTable()
+    }
+  }
+
   object CompareJoinQuery {
     class Args extends Subcommand("compare-join-query") with OfflineSubcommand {
       val queryConf: ScallopOption[String] =
@@ -1107,6 +1122,8 @@ object Driver {
     addSubcommand(LogFlattenerArgs)
     object ConsistencyMetricsArgs extends ConsistencyMetricsCompute.Args
     addSubcommand(ConsistencyMetricsArgs)
+    object ComparisonTableArgs extends BuildComparisonTable.Args
+    addSubcommand(ComparisonTableArgs)
     object GroupByBackfillArgs extends GroupByBackfill.Args
     addSubcommand(GroupByBackfillArgs)
     object StagingQueryBackfillArgs extends StagingQueryBackfill.Args
@@ -1176,6 +1193,7 @@ object Driver {
           case args.FetcherCliArgs         => FetcherCli.run(args.FetcherCliArgs)
           case args.LogFlattenerArgs       => LogFlattener.run(args.LogFlattenerArgs)
           case args.ConsistencyMetricsArgs => ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
+          case args.ComparisonTableArgs    => BuildComparisonTable.run(args.ComparisonTableArgs)
           case args.CompareJoinQueryArgs   => CompareJoinQuery.run(args.CompareJoinQueryArgs)
           case args.AnalyzerArgs           => Analyzer.run(args.AnalyzerArgs)
           case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)

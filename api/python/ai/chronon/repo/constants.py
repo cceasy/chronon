@@ -18,6 +18,7 @@ class RunMode(str, Enum):
     METADATA_UPLOAD = "metadata-upload"
     FETCH = "fetch"
     CONSISTENCY_METRICS_COMPUTE = "consistency-metrics-compute"
+    BUILD_COMPARISON_TABLE = "build-comparison-table"
     COMPARE = "compare"
     LOCAL_STREAMING = "local-streaming"
     LOG_FLATTENER = "log-flattener"
@@ -124,6 +125,7 @@ ROUTES = {
         RunMode.METADATA_UPLOAD: "metadata-upload",
         RunMode.FETCH: "fetch",
         RunMode.CONSISTENCY_METRICS_COMPUTE: "consistency-metrics-compute",
+        RunMode.BUILD_COMPARISON_TABLE: "build-comparison-table",
         RunMode.COMPARE: "compare-join-query",
         RunMode.STATS_SUMMARY: "stats-summary",
         RunMode.LOG_SUMMARY: "log-summary",

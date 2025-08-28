@@ -73,7 +73,18 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
     copiedJoin
   }
 
-  private def buildComparisonTable(): Unit = {
+  def buildComparisonTable(): Unit = {
+    // migrate legacy configs without consistencySamplePercent param
+    if (!joinConf.metaData.isSetConsistencySamplePercent) {
+      logger.info("consistencySamplePercent is unset and will default to 100")
+      joinConf.metaData.consistencySamplePercent = 100
+    }
+    logger.info(s"consistencySamplePercent is ${joinConf.metaData.consistencySamplePercent}")
+
+    if (joinConf.metaData.consistencySamplePercent == 0) {
+      return
+    }
+    
     val unfilledRanges = tableUtils
       .unfilledRanges(joinConf.metaData.comparisonTable,
                       PartitionRange(null, endDate),
@@ -88,12 +99,6 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
   }
 
   def buildConsistencyMetrics(): fetcher.DataMetrics = {
-    // migrate legacy configs without consistencySamplePercent param
-    if (!joinConf.metaData.isSetConsistencySamplePercent) {
-      logger.info("consistencySamplePercent is unset and will default to 100")
-      joinConf.metaData.consistencySamplePercent = 100
-    }
-
     if (joinConf.metaData.consistencySamplePercent == 0) {
       logger.info(s"Exit ConsistencyJob because consistencySamplePercent = 0 for join conf ${joinConf.metaData.name}")
       return fetcher.DataMetrics(Seq())

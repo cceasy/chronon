@@ -246,6 +246,9 @@ class MetadataStore(fetchContext: FetchContext) {
     val valueFields = new mutable.ListBuffer[StructField]
     val valueInfos = mutable.ListBuffer.empty[JoinCodec.ValueInfo]
     var hasPartialFailure = false
+//    if (joinConf.isSetRowIds) {
+//      joinConf.rowIds.forEach(col => keyFields.add(StructField(col, StringType))) // TODO hardcode to string
+//    }
     // collect keyFields and valueFields from joinParts/GroupBys
     joinConf.joinPartOps.foreach { joinPart =>
       getGroupByServingInfo(joinPart.groupBy.metaData.getName)
