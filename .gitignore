@@ -118,3 +118,4 @@ MODULE.bazel*
 **/api/py/ai/chronon/observability/__init__.py
 
 _chronon_gcp_setup/
+_chronon-knowledge-graph/

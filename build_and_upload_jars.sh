@@ -23,4 +23,6 @@ gsutil cp ${BAZEL_BIN_DIR}/spark/spark_assembly_deploy.jar gs://${BUCKET}/releas
 gsutil cp ${BAZEL_BIN_DIR}/flink/flink_assembly_deploy.jar gs://${BUCKET}/release/${VERSION}/jars/
 gsutil cp ${BAZEL_BIN_DIR}/service/service_assembly_deploy.jar gs://${BUCKET}/release/${VERSION}/jars/
 
+gsutil cp "gs://${BUCKET}/release/${VERSION}/jars/*.jar" gs://awx-ml-platform-nonprod/chronon-release/${VERSION}/jars/
+
 gsutil ls -lh gs://${BUCKET}/release/${VERSION}/jars
