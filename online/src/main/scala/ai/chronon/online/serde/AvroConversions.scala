@@ -28,6 +28,7 @@ import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.{AbstractIterator, mutable}
 import com.linkedin.avro.fastserde.{primitive => fastavro}
+import com.linkedin.avro.fastserde.BufferBackedPrimitiveFloatList
 
 object AvroConversions {
 
@@ -228,6 +229,14 @@ object AvroConversions {
           arr
 
         case floats: fastavro.PrimitiveFloatArrayList =>
+          val arr = new util.ArrayList[Any](floats.size)
+          val iterator = floats.iterator()
+          while (iterator.hasNext) {
+            arr.add(iterator.next())
+          }
+          arr
+
+        case floats: BufferBackedPrimitiveFloatList =>
           val arr = new util.ArrayList[Any](floats.size)
           val iterator = floats.iterator()
           while (iterator.hasNext) {
