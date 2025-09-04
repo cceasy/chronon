@@ -1,0 +1,320 @@
+name: Publish Release
+on:
+  release:
+    types: [published]
+
+env:
+  VERSION: ${{ github.event.release.tag_name }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  check_if_latest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Check if Release is Latest
+        id: check_latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CURRENT_TAG=${{ env.VERSION }}
+          LATEST_TAG=$(gh release view --json tagName --jq '.tagName')
+          
+          if [ "$CURRENT_TAG" = "$LATEST_TAG" ]; then
+            echo "IS_LATEST=true" >> $GITHUB_OUTPUT
+          else
+            echo "IS_LATEST=false" >> $GITHUB_OUTPUT
+          fi
+
+    outputs:
+      is_latest: ${{ steps.check_latest.outputs.IS_LATEST }}
+
+  # We need to rebuild the wheel to bake in the new version number
+  build_python_wheel:
+    runs-on: ubuntu-latest
+    needs: [check_if_latest]
+
+    steps:
+      - name: Checkout chronon repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' # This should match the version used in [chronon]/.toolversions
+
+      - name: Install Thrift
+        env:
+          THRIFT_VERSION: 0.21.0
+        run: |
+          sudo apt-get update -y && \
+          sudo apt-get install -y automake bison flex g++ git libboost-all-dev libevent-dev libssl-dev libtool make pkg-config && \
+          curl -LSs https://archive.apache.org/dist/thrift/${{env.THRIFT_VERSION}}/thrift-${{env.THRIFT_VERSION}}.tar.gz -o thrift-${{env.THRIFT_VERSION}}.tar.gz && \
+          tar -xzf thrift-${{env.THRIFT_VERSION}}.tar.gz && \
+          cd thrift-${{env.THRIFT_VERSION}} && \
+          sudo ./configure --without-python --without-cpp --without-nodejs --without-java --disable-debug --disable-tests --disable-libs && \
+          sudo make && \
+          sudo make install && \
+          cd .. && \
+          sudo rm -rf thrift-${{env.THRIFT_VERSION}} thrift-${{env.THRIFT_VERSION}}.tar.gz
+
+      - name: Run Python Build Script
+        id: build-wheel
+        run: |
+          ZIPLINE_VERSION=${VERSION#v}  ./mill python.wheel
+          EXPECTED_WHEEL_DIR=./out/python/wheel.dest/dist
+          EXPECTED_ZIPLINE_WHEEL="zipline_ai-${VERSION#v}-py3-none-any.whl"
+          if [ ! -f "$EXPECTED_WHEEL_DIR/$EXPECTED_ZIPLINE_WHEEL" ]; then
+            echo "$EXPECTED_ZIPLINE_WHEEL not found"
+            exit 1
+          fi
+          cp $EXPECTED_WHEEL_DIR/$EXPECTED_ZIPLINE_WHEEL .
+          echo "wheel_file=$EXPECTED_ZIPLINE_WHEEL" >> $GITHUB_OUTPUT
+
+      - name: Upload Wheel Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zipline-ai-wheel
+          path: ${{ steps.build-wheel.outputs.wheel_file }}
+
+    outputs:
+      wheel_file: ${{ steps.build-wheel.outputs.wheel_file }}
+
+  promote-gcp-candidate:
+    runs-on: ubuntu-latest
+    needs: [check_if_latest, build_python_wheel]
+
+    permissions:
+      id-token: write
+      contents: write
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      - name: Configure GCP Credentials for Main Project
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{secrets.GCP_MAIN_PROJECT_ID}}
+          workload_identity_provider: projects/${{secrets.GCP_MAIN_PROJECT_NUMBER}}/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-actions@${{secrets.GCP_MAIN_PROJECT_ID}}.iam.gserviceaccount.com
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download Python Wheel Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: zipline-ai-wheel
+
+      - name: Copy GCS Artifacts from Canary Candidate
+        shell: bash
+        run: |
+          set -eo pipefail
+          # Download Jars from Canary for attaching to the release
+          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/flink_assembly_deploy.jar .
+          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/cloud_gcp_lib_deploy.jar .
+          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/service_assembly_deploy.jar .
+          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/connectors_pubsub_deploy.jar .
+
+          for customer_id in "canary" "etsy" "base" "dev"; do
+            echo "Uploading wheel to GCS for customer_id: $customer_id"
+            gcloud storage cp ${{ needs.build_python_wheel.outputs.wheel_file }} gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/wheels/${{ needs.build_python_wheel.outputs.wheel_file }}
+            gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/wheels/${{ needs.build_python_wheel.outputs.wheel_file }} --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
+              gcloud storage rm gs://zipline-artifacts-${customer_id}/release/latest/wheels/* || true
+              gcloud storage cp ${{ needs.build_python_wheel.outputs.wheel_file }} gs://zipline-artifacts-${customer_id}/release/latest/wheels/${{ needs.build_python_wheel.outputs.wheel_file }}
+              gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/latest/wheels/${{ needs.build_python_wheel.outputs.wheel_file }} --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            fi
+            echo "Uploading jars to GCS for customer_id: $customer_id"
+            gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/flink_assembly_deploy.jar gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/flink_assembly_deploy.jar
+            gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/flink_assembly_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
+              gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/flink_assembly_deploy.jar gs://zipline-artifacts-${customer_id}/release/latest/jars/flink_assembly_deploy.jar
+              gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/latest/jars/flink_assembly_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            fi
+
+            gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/cloud_gcp_lib_deploy.jar gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/cloud_gcp_lib_deploy.jar
+            gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/cloud_gcp_lib_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
+              gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/cloud_gcp_lib_deploy.jar gs://zipline-artifacts-${customer_id}/release/latest/jars/cloud_gcp_lib_deploy.jar
+              gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/latest/jars/cloud_gcp_lib_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            fi
+
+            gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/connectors_pubsub_deploy.jar gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/connectors_pubsub_deploy.jar
+            gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/connectors_pubsub_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
+              gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/connectors_pubsub_deploy.jar gs://zipline-artifacts-${customer_id}/release/latest/jars/connectors_pubsub_deploy.jar
+              gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/latest/jars/connectors_pubsub_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            fi
+
+            gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/service_assembly_deploy.jar gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/service_assembly_deploy.jar
+            gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/service_assembly_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
+              gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/service_assembly_deploy.jar gs://zipline-artifacts-${customer_id}/release/latest/jars/service_assembly_deploy.jar
+              gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/latest/jars/service_assembly_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            fi
+          done
+          echo "Artifacts uploaded to GCS"
+
+      - name: Attach Wheel to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        run: |
+          gh release upload $VERSION ${{ needs.build_python_wheel.outputs.wheel_file }}
+
+      - name: Attach Flink Assembly Jar to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload $VERSION flink_assembly_deploy.jar
+
+
+      - name: Attach Cloud GCP Jar to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload $VERSION cloud_gcp_lib_deploy.jar
+
+      - name: Attach Pubsub connector Jar to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload $VERSION connectors_pubsub_deploy.jar
+
+      - name: Attach Service Assembly Jar to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload $VERSION service_assembly_deploy.jar
+
+      # Setup JFrog CLI
+      - name: Setup JFrog CLI
+        uses: jfrog/setup-jfrog-cli@v4
+
+      - name: Configure JFrog CLI with Access Token
+        run: |
+          jf config add artifactory \
+            --url="${{ secrets.ARTIFACTORY_URL }}" \
+            --access-token="${{ secrets.ARTIFACTORY_TOKEN }}" \
+            --interactive=false
+
+      - name: Upload Wheel to Artifactory
+        run: |
+          jf rt upload ${{ needs.build_python_wheel.outputs.wheel_file }} "wheels/${VERSION#v}/"
+
+      - name: Upload Flink Assembly Jar to Artifactory
+        run: |
+          jf rt upload flink_assembly_deploy.jar "jars/${VERSION#v}/"
+
+      - name: Upload Cloud GCP Jar to Artifactory
+        run: |
+          jf rt upload cloud_gcp_lib_deploy.jar "jars/${VERSION#v}/"
+
+      - name: Upload PubSub Connector Jar to Artifactory
+        run: |
+          jf rt upload connectors_pubsub_deploy.jar "jars/${VERSION#v}/"
+
+      - name: Upload Service Assembly Jar to Artifactory
+        run: |
+          jf rt upload service_assembly_deploy.jar "jars/${VERSION#v}/"
+
+  promote-aws-candidate:
+    runs-on: ubuntu-latest
+    needs: [check_if_latest, build_python_wheel]
+
+    permissions:
+      id-token: write
+      contents: write
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials for Main Project
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{secrets.AWS_ACCOUNT_ID}}:role/github_actions
+          aws-region: ${{secrets.AWS_REGION}}
+
+      - name: Download Python Wheel Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: zipline-ai-wheel
+
+      - name: Copy AWS Artifacts from Canary Candidate
+        shell: bash
+        run: |
+          set -eo pipefail
+          # Download Jars from Canary for attaching to the release
+          aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/cloud_aws_lib_deploy.jar .
+
+          for customer_id in "canary" "base" "dev" "plaid"; do
+            echo "Uploading wheel to S3 for customer_id: $customer_id"
+            aws s3 cp ${{ needs.build_python_wheel.outputs.wheel_file }} s3://zipline-artifacts-${customer_id}/release/${VERSION#v}/wheels/${{ needs.build_python_wheel.outputs.wheel_file }} --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
+              aws s3 rm s3://zipline-artifacts-${customer_id}/release/latest/wheels/ --recursive || true
+              aws s3 cp ${{ needs.build_python_wheel.outputs.wheel_file }} s3://zipline-artifacts-${customer_id}/release/latest/wheels/${{ needs.build_python_wheel.outputs.wheel_file }} --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            fi
+            echo "Uploading jars to S3 for customer_id: $customer_id"
+            aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/flink_assembly_deploy.jar s3://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/flink_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
+              aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/flink_assembly_deploy.jar s3://zipline-artifacts-${customer_id}/release/latest/jars/flink_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            fi
+            aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/cloud_aws_lib_deploy.jar s3://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/cloud_aws_lib_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
+              aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/cloud_aws_lib_deploy.jar s3://zipline-artifacts-${customer_id}/release/latest/jars/cloud_aws_lib_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            fi
+            aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/service_assembly_deploy.jar s3://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/service_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
+              aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/service_assembly_deploy.jar s3://zipline-artifacts-${customer_id}/release/latest/jars/service_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+            fi
+          done
+
+      - name: Attach Cloud AWS Jar to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload $VERSION cloud_aws_lib_deploy.jar
+
+      # Setup JFrog CLI
+      - name: Setup JFrog CLI
+        uses: jfrog/setup-jfrog-cli@v4
+        with:
+          version: latest
+
+      - name: Configure JFrog CLI with Access Token
+        run: |
+          jf config add artifactory \
+            --url="${{ secrets.ARTIFACTORY_URL }}" \
+            --access-token="${{ secrets.ARTIFACTORY_TOKEN }}" \
+            --interactive=false
+
+      - name: Upload Cloud AWS Jar to Artifactory
+        run: |
+          jf rt upload cloud_aws_lib_deploy.jar "jars/${VERSION#v}/"
+
+  clean_up_artifacts:
+    permissions:
+      id-token: write
+      contents: read
+
+    runs-on: ubuntu-latest
+
+    needs: [ promote-aws-candidate, promote-gcp-candidate ]
+
+    steps:
+      - name: Delete Artifacts
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: zipline-ai-wheel

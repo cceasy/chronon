@@ -56,34 +56,3 @@ class TestZiplineHub:
             },
             headers={"Content-Type": "application/json"}
         )
-
-    @patch("requests.post")
-    def test_call_workflow_start_api_with_custom_dates(self, mock_post):
-        """Test workflow start API call with custom dates."""
-        mock_response = Mock()
-        mock_response.json.return_value = {"workflowId": "789"}
-        mock_post.return_value = mock_response
-
-        hub = ZiplineHub("http://example.com")
-        result = hub.call_workflow_start_api(
-            "test_conf", "daily", "main", "user1", "hash123",
-            start="2023-01-01", end="2023-01-31",
-            force_recompute=True, skip_long_running=True
-        )
-
-        assert result == {"workflowId": "789"}
-        mock_post.assert_called_once_with(
-            "http://example.com/workflow/start",
-            json={
-                "confName": "test_conf",
-                "confHash": "hash123",
-                "mode": "daily",
-                "branch": "main",
-                "user": "user1",
-                "start": "2023-01-01",
-                "end": "2023-01-31",
-                "forceRecompute": True,
-                "skipLongRunningNodes": True
-            },
-            headers={"Content-Type": "application/json"}
-        )

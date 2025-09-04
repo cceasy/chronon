@@ -113,8 +113,8 @@ class ZiplineHub:
         skip_long_running=False,
     ):
         url = f"{self.base_url}/workflow/start"
-        end_dt = end if end else str(date.today())
-        start_dt = start if start else str(date.today() - timedelta(days=14))
+        end_dt = end.strftime("%Y-%m-%d") if end else date.today().strftime("%Y-%m-%d")
+        start_dt = start.strftime("%Y-%m-%d") if start else (date.today() - timedelta(days=14)).strftime("%Y-%m-%d")
         workflow_request = {
             "confName": conf_name,
             "confHash": conf_hash,
@@ -129,7 +129,6 @@ class ZiplineHub:
         headers = {"Content-Type": "application/json"}
         if hasattr(self, "id_token"):
             headers["Authorization"] = f"Bearer {self.id_token}"
-
         try:
             response = requests.post(url, json=workflow_request, headers=headers)
             response.raise_for_status()
