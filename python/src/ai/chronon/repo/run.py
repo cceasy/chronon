@@ -209,7 +209,11 @@ def validate_additional_jars(ctx, param, value):
     default=False,
     help="Enables verbose debug logging in run modes that support it",
 )
-@click.option("--dw-type", help="Data warehouse type for upload-to-kv mode")
+@click.option(
+    "--dw-type",
+    type=click.Choice(["bigquery", "hive", "delta"], case_sensitive=False),
+    help="Data warehouse type for upload-to-kv mode",
+)
 @click.pass_context
 def main(
     ctx,
