@@ -379,6 +379,57 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
   }
 
   override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
+    // Check warehouse type from configuration
+    val warehouseType = conf.getOrElse("WAREHOUSE_TYPE", "bigquery")
+    
+    warehouseType match {
+      case "hive" | "delta" => bulkPutFromSpark(sourceOfflineTable, destinationOnlineDataSet, partition)
+      case "bigquery" => bulkPutFromBigQuery(sourceOfflineTable, destinationOnlineDataSet, partition)
+      case other => 
+        logger.error(s"Unsupported warehouse type: $other")
+        metricsContext.increment("bulkPut.failures", Map("exception" -> "unsupportedwarehousetype"))
+        throw new IllegalArgumentException(s"Unsupported warehouse type: $other. Use 'bigquery' or 'hive'")
+    }
+  }
+  
+  private def bulkPutFromSpark(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
+    if (maybeAdminClient.isEmpty) {
+      logger.error("Need the BigTable admin client available to export data to BigTable")
+      metricsContext.increment("bulkPut.failures", Map("exception" -> "missinguploadclients"))
+      throw new RuntimeException("BigTable admin client is needed to export data to BigTable")
+    }
+    
+    val adminClient = maybeAdminClient.get
+    val startTs = System.currentTimeMillis()
+    
+    logger.info(s"Triggering Spark-based bulk load for dataset: $destinationOnlineDataSet, " +
+                s"table: $sourceOfflineTable, partition: $partition")
+    
+    try {
+      // Use Spark2BigTableLoader to load data from Hive/Delta tables
+      val loaderArgs = Array(
+        "--table-name", sourceOfflineTable,
+        "--dataset", destinationOnlineDataSet,
+        "--end-ds", partition,
+        "--project-id", adminClient.getProjectId,
+        "--instance-id", adminClient.getInstanceId
+      )
+      
+      // Run the Spark job
+      Spark2BigTableLoader.main(loaderArgs)
+      
+      logger.info("Spark-based bulk load completed successfully")
+      metricsContext.distribution("bulkPut.spark.latency", System.currentTimeMillis() - startTs)
+      metricsContext.increment("bulkPut.spark.successes")
+    } catch {
+      case e: Exception =>
+        logger.error(s"Failed to run Spark-based bulk load for $sourceOfflineTable", e)
+        metricsContext.increment("bulkPut.spark.failures", Map("exception" -> e.getClass.getName))
+        throw e
+    }
+  }
+  
+  private def bulkPutFromBigQuery(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
     if (maybeBigQueryClient.isEmpty || maybeAdminClient.isEmpty) {
       logger.error("Need the BigTable admin and BigQuery available to export data to BigTable")
       metricsContext.increment("bulkPut.failures", Map("exception" -> "missinguploadclients"))
@@ -462,8 +513,8 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
         throw new RuntimeException(s"Export job failed with error: ${completedJob.getStatus.getError}")
       } else {
         logger.info("Export job completed successfully")
-        metricsContext.distribution("bulkPut.latency", System.currentTimeMillis() - startTs)
-        metricsContext.increment("bulkPut.successes")
+        metricsContext.distribution("bulkPut.bigquery.latency", System.currentTimeMillis() - startTs)
+        metricsContext.increment("bulkPut.bigquery.successes")
       }
     }
   }

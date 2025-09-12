@@ -172,9 +172,9 @@ fail_if_bash_failed
 # Need to wait for upload to finish
 echo -e "${GREEN}<<<<<.....................................UPLOAD-TO-KV.....................................>>>>>\033[0m"
 if [[ "$ENVIRONMENT" == "canary" ]]; then
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode upload-to-kv --conf compiled/group_bys/gcp/purchases.v1_test__0 --partition-string=$END_DS
+  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode upload-to-kv --conf compiled/group_bys/gcp/purchases.v1_test__0 --ds=$END_DS
 else
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode upload-to-kv --conf compiled/group_bys/gcp/purchases.v1_dev__0 --partition-string=$END_DS
+  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode upload-to-kv --conf compiled/group_bys/gcp/purchases.v1_dev__0 --ds=$END_DS
 fi
 fail_if_bash_failed
 

@@ -134,8 +134,13 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
 
     val jobId = submissionProperties.getOrElse(JobId, throw new RuntimeException("No generated job id found"))
 
+    val maybeAdditionalJarsUri = submissionProperties.get(AdditionalJars)
+    val additionalJars = maybeAdditionalJarsUri.map(_.split(",")).getOrElse(Array.empty)
+
     val jobBuilder = jobType match {
-      case TypeSparkJob => buildSparkJob(mainClass, jarUri, files, jobProperties, args: _*)
+      case TypeSparkJob =>
+        val jarUris = Array(jarUri) ++ additionalJars
+        buildSparkJob(mainClass, jarUris, files, jobProperties, args: _*)
       case TypeFlinkJob =>
         val mainJarUri =
           submissionProperties.getOrElse(FlinkMainJarURI,
@@ -145,8 +150,6 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
                                          throw new RuntimeException(s"Missing expected $FlinkCheckpointUri"))
         val maybeSavepointUri = submissionProperties.get(SavepointUri)
         val maybePubSubConnectorJarUri = submissionProperties.get(FlinkPubSubConnectorJarURI)
-        val maybeAdditionalJarsUri = submissionProperties.get(AdditionalJars)
-        val additionalJars = maybeAdditionalJarsUri.map(_.split(",")).getOrElse(Array.empty)
         val jarUris = Array(jarUri) ++ maybePubSubConnectorJarUri.toList ++ additionalJars
         buildFlinkJob(mainClass,
                       mainJarUri,
@@ -200,11 +203,11 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
   }
 
   private def buildSparkJob(mainClass: String,
-                            jarUri: String,
+                            jarUris: Array[String],
                             files: List[String],
                             jobProperties: Map[String, String],
                             args: String*): Job.Builder = {
-    val jarFileUris = Array(jarUri) ++ DataprocAdditionalJars.additionalSparkJobJars
+    val jarFileUris = jarUris ++ DataprocAdditionalJars.additionalSparkJobJars
     val sparkJob = SparkJob
       .newBuilder()
       .putAllProperties(jobProperties.asJava)
@@ -396,9 +399,12 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
       .getArgValue(args, JobIdArgKeyword)
       .getOrElse(throw new Exception("Missing required argument: " + JobIdArgKeyword))
 
+    // include additional jars if present
+    val additionalJarsProps = JobSubmitter.getArgValue(args, AdditionalJarsUriArgKeyword).map(AdditionalJars -> _)
+    
     val submissionProps = jobType match {
       case TypeSparkJob =>
-        Map(MainClass -> mainClass, JarURI -> jarUri, MetadataName -> metadataName, JobId -> jobId)
+        Map(MainClass -> mainClass, JarURI -> jarUri, MetadataName -> metadataName, JobId -> jobId) ++ additionalJarsProps
       case TypeFlinkJob =>
         val flinkCheckpointUri = JobSubmitter
           .getArgValue(args, StreamingCheckpointPathArgKeyword)
@@ -409,8 +415,6 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
         // pull the pubsub connector uri if it has been passed
         val maybePubSubJarUri = JobSubmitter
           .getArgValue(args, FlinkPubSubJarUriArgKeyword)
-        // include additional jars if present
-        val additionalJars = JobSubmitter.getArgValue(args, AdditionalJarsUriArgKeyword)
 
         val groupByName = JobSubmitter
           .getArgValue(args, GroupByNameArgKeyword)
@@ -423,7 +427,7 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
           FlinkCheckpointUri -> flinkCheckpointUri,
           MetadataName -> groupByName,
           JobId -> jobId
-        ) ++ (maybePubSubJarUri.map(FlinkPubSubConnectorJarURI -> _) ++ additionalJars.map(AdditionalJars -> _))
+        ) ++ (maybePubSubJarUri.map(FlinkPubSubConnectorJarURI -> _) ++ additionalJarsProps)
 
         val userPassedSavepoint = JobSubmitter
           .getArgValue(args, StreamingCustomSavepointArgKeyword)

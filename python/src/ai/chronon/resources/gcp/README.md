@@ -114,7 +114,7 @@ Results are written to the configured BigQuery + Iceberg tables under the `outpu
 zipline run \
 --mode upload-to-kv \
 --conf compiled/group_bys/<TEAM_NAME>/<GROUP_BY_NAME> \
---partition-string <DATE>
+--ds <DATE>
 ```
 
 ---
