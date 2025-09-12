@@ -16,9 +16,9 @@ case class TableTestUtils(override val sparkSession: SparkSession) extends Table
           val specs = mainSpec +: subPartitionFilters.map { case (key, value) =>
             s"$key='$value'"
           }.toSeq
-          specs.mkString("PARTITION (", ",", ")")
+          specs.mkString("PARTITION (", ", ", ")")
         }
-        .mkString(",")
+        .mkString(", ")
       val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
       sql(dropSql)
     } else {
