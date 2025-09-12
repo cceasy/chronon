@@ -388,7 +388,11 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
       case other => 
         logger.error(s"Unsupported warehouse type: $other")
         metricsContext.increment("bulkPut.failures", Map("exception" -> "unsupportedwarehousetype"))
-        throw new IllegalArgumentException(s"Unsupported warehouse type: $other. Use 'bigquery' or 'hive'")
+        metricsContext.increment(
+          "bulkPut.failures",
+          Map("exception" -> "unsupported_warehouse_type", "warehouse_type" -> other)
+        )
+        throw new IllegalArgumentException( s"Unsupported warehouse type: $other. Supported: bigquery, hive, delta")
     }
   }
   

@@ -679,7 +679,7 @@ object Driver {
                     descr = "Data warehouse type: 'bigquery' or 'hive'. Default is 'bigquery'")
       
       // Override to add warehouse type to props
-      override def serializableProps: Map[String, String] = super.serializableProps + ("WAREHOUSE_TYPE" -> dwType())
+      override def serializableProps: Map[String, String] = super.serializableProps + ("WAREHOUSE_TYPE" -> dwType().toLowerCase)
     }
 
     def run(args: Args): Unit = {

@@ -155,7 +155,9 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
     val jobId = submissionProperties.getOrElse(JobId, throw new RuntimeException("No generated job id found"))
 
     val maybeAdditionalJarsUri = submissionProperties.get(AdditionalJars)
-    val additionalJars = maybeAdditionalJarsUri.map(_.split(",")).getOrElse(Array.empty)
+    val additionalJars = maybeAdditionalJarsUri
+      .map(_.split(",").map(_.trim).filter(_.nonEmpty))
+      .getOrElse(Array.empty)
 
     val jobBuilder = jobType match {
       case TypeSparkJob =>

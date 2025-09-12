@@ -200,8 +200,17 @@ def validate_additional_jars(ctx, param, value):
     help="Remote artifact URI to install zipline client artifacts necessary for interacting with Zipline infrastructure.",
 )
 @click.option("--disable-cloud-logging", is_flag=True, default=False, help="Disables cloud logging")
-@click.option("--enable-debug", is_flag=True, default=False, help="Enables verbose debug logging in run modes that support it")
-@click.option("--dw-type", help="Data warehouse type for upload-to-kv mode")
+@click.option(
+    "--enable-debug",
+    is_flag=True,
+    default=False,
+    help="Enables verbose debug logging in run modes that support it",
+)
+@click.option(
+    "--dw-type",
+    type=click.Choice(["bigquery", "hive", "delta"], case_sensitive=False),
+    help="Data warehouse type for upload-to-kv mode",
+)
 @click.pass_context
 def main(
     ctx,
