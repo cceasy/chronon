@@ -81,6 +81,10 @@ object Driver {
 
     val confType: ScallopOption[String] =
       opt[String](required = false, descr = "Type of the conf to run. ex: joins, group_bys, models, staging_queries")
+    val endDateInternal: ScallopOption[String] =
+      opt[String](name = "end-date",
+        required = false,
+        descr = "End date to compute as of, start date is taken from conf.")
   }
 
   trait OfflineSubcommand extends SharedSubCommandArgs {
@@ -104,12 +108,7 @@ object Driver {
       opt[String](required = false,
                   descr = "Start date to compute offline backfill, " +
                     "this start date will override start partition specified in conf.")
-
-    private val endDateInternal: ScallopOption[String] =
-      opt[String](name = "end-date",
-                  required = false,
-                  descr = "End date to compute as of, start date is taken from conf.")
-
+    
     val localTableMapping: Map[String, String] = propsLong[String](
       name = "local-table-mapping",
       keyName = "namespace.table",
@@ -672,32 +671,42 @@ object Driver {
       // Expectation that run.py only sets confPath
       val confPath: ScallopOption[String] = opt[String](required = false, descr = "path to groupBy conf")
 
-      val partitionString: ScallopOption[String] =
-        opt[String](required = true, descr = "Partition string (in 'yyyy-MM-dd' format) that we are uploading")
+      def partitionString(): String = endDateInternal.getOrElse(throw new Exception("partition date is not provided!"))
+      
+      val dwType: ScallopOption[String] =
+        opt[String](required = false, 
+                    default = Some("bigquery"),
+                    descr = "Data warehouse type: 'bigquery' or 'hive'. Default is 'bigquery'")
+      
+      // Override to add warehouse type to props
+      override def serializableProps: Map[String, String] = super.serializableProps + ("WAREHOUSE_TYPE" -> dwType())
     }
 
     def run(args: Args): Unit = {
       val groupByConf = parseConf[api.GroupBy](args.confPath())
-
       val offlineTable = groupByConf.metaData.uploadTable
-
       val groupByName = groupByConf.metaData.name
+      val startTime = System.currentTimeMillis()
+      val warehouseType = args.dwType()
 
       logger.info(
-        s"Triggering bulk load for GroupBy: ${groupByName} for partition: ${args.partitionString()} from table: ${offlineTable}")
-      val kvStore = args.api.genKvStore
-      val startTime = System.currentTimeMillis()
+        s"Triggering bulk load for GroupBy: ${groupByName} for partition: ${args.partitionString()} " +
+        s"from table: ${offlineTable} using ${warehouseType} warehouse")
 
+      val kvStore = args.api.genKvStore
+      
       try {
-        // TODO: we may need to wrap this around TableUtils
+        // The kvStore implementation will handle different warehouse types based on the configuration
         kvStore.bulkPut(offlineTable, groupByName, args.partitionString())
       } catch {
         case e: Exception =>
           logger.error(
-            s"Failed to upload GroupBy: ${groupByName} for partition: ${args.partitionString()} from table: $offlineTable",
+            s"Failed to upload GroupBy: ${groupByName} for partition: ${args.partitionString()} " +
+            s"from ${warehouseType} table: $offlineTable",
             e)
           throw e
       }
+      
       logger.info(
         s"Uploaded GroupByUpload data to KV store for GroupBy: ${groupByName}; partition: " +
           s"${args.partitionString()} in ${(System.currentTimeMillis() - startTime) / 1000} seconds")

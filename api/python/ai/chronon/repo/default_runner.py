@@ -51,6 +51,7 @@ class Runner:
         self.validate = args.get("validate")
         self.validate_rows = args.get("validate_rows")
         self.enable_debug = args.get("enable_debug")
+        self.dw_type = args.get("dw_type")
 
         valid_jar = args["online_jar"] and os.path.exists(args["online_jar"])
 
@@ -260,6 +261,12 @@ class Runner:
 
         if self.conf_type:
             submitter_args.append(f"--conf-type={self.conf_type}")
+            
+        if self.dw_type:
+            submitter_args.append(f"--dw-type={self.dw_type}")
+
+        if self.additional_jars:
+            submitter_args.append(f"--additional-jars={self.additional_jars}")
 
         if self.mode != RunMode.FETCH:
             submitter_args.append(" --local-conf-path={conf}".format(
