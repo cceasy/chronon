@@ -379,20 +379,15 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
   }
 
   override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
-    // Check warehouse type from configuration
-    val warehouseType = conf.getOrElse("WAREHOUSE_TYPE", "bigquery")
+    val uploader = conf.getOrElse("UPLOADER", "bigquery")
     
-    warehouseType match {
-      case "hive" | "delta" => bulkPutFromSpark(sourceOfflineTable, destinationOnlineDataSet, partition)
+    uploader match {
+      case "spark" => bulkPutFromSpark(sourceOfflineTable, destinationOnlineDataSet, partition)
       case "bigquery" => bulkPutFromBigQuery(sourceOfflineTable, destinationOnlineDataSet, partition)
       case other => 
-        logger.error(s"Unsupported warehouse type: $other")
-        metricsContext.increment("bulkPut.failures", Map("exception" -> "unsupportedwarehousetype"))
-        metricsContext.increment(
-          "bulkPut.failures",
-          Map("exception" -> "unsupported_warehouse_type", "warehouse_type" -> other)
-        )
-        throw new IllegalArgumentException( s"Unsupported warehouse type: $other. Supported: bigquery, hive, delta")
+        logger.error(s"Unsupported uploader: $other")
+        metricsContext.increment("bulkPut.failures", Map("exception" -> "unsupported_uploader"))
+        throw new IllegalArgumentException( s"Unsupported uploader: $other.")
     }
   }
   

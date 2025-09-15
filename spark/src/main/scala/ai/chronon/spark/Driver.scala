@@ -673,13 +673,13 @@ object Driver {
 
       def partitionString(): String = endDateInternal.getOrElse(throw new Exception("partition date is not provided!"))
       
-      val dwType: ScallopOption[String] =
+      val uploader: ScallopOption[String] =
         opt[String](required = false, 
                     default = Some("bigquery"),
-                    descr = "Data warehouse type: 'bigquery' or 'hive'. Default is 'bigquery'")
+                    descr = "uploader to use when load data to kv store, default is bigquery")
       
       // Override to add warehouse type to props
-      override def serializableProps: Map[String, String] = super.serializableProps + ("WAREHOUSE_TYPE" -> dwType().toLowerCase)
+      override def serializableProps: Map[String, String] = super.serializableProps + ("UPLOADER" -> uploader().toLowerCase)
     }
 
     def run(args: Args): Unit = {
@@ -687,11 +687,11 @@ object Driver {
       val offlineTable = groupByConf.metaData.uploadTable
       val groupByName = groupByConf.metaData.name
       val startTime = System.currentTimeMillis()
-      val warehouseType = args.dwType()
+      val uploader = args.uploader()
 
       logger.info(
         s"Triggering bulk load for GroupBy: ${groupByName} for partition: ${args.partitionString()} " +
-        s"from table: ${offlineTable} using ${warehouseType} warehouse")
+        s"from table: ${offlineTable} using ${uploader}")
 
       val kvStore = args.api.genKvStore
       
@@ -702,7 +702,7 @@ object Driver {
         case e: Exception =>
           logger.error(
             s"Failed to upload GroupBy: ${groupByName} for partition: ${args.partitionString()} " +
-            s"from ${warehouseType} table: $offlineTable",
+            s"table: $offlineTable with $uploader",
             e)
           throw e
       }
