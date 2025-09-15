@@ -207,9 +207,9 @@ def validate_additional_jars(ctx, param, value):
     help="Enables verbose debug logging in run modes that support it",
 )
 @click.option(
-    "--dw-type",
-    type=click.Choice(["bigquery", "hive", "delta"], case_sensitive=False),
-    help="Data warehouse type for upload-to-kv mode",
+    "--uploader",
+    type=click.Choice(["spark", "bigquery"], case_sensitive=False),
+    help="Bulk put uploader to use when load data to kv store, applied to upload-to-kv mode",
 )
 @click.pass_context
 def main(
@@ -250,7 +250,7 @@ def main(
     disable_cloud_logging,
     additional_jars,
     enable_debug,
-    dw_type,
+    uploader,
 ):
     unknown_args = ctx.args
     click.echo("Running with args: {}".format(ctx.params))

@@ -423,12 +423,12 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
       Spark2BigTableLoader.main(loaderArgs)
       
       logger.info("Spark-based bulk load completed successfully")
-      metricsContext.distribution("bulkPut.spark.latency", System.currentTimeMillis() - startTs)
-      metricsContext.increment("bulkPut.spark.successes")
+      metricsContext.distribution("bulkPut.latency", System.currentTimeMillis() - startTs)
+      metricsContext.increment("bulkPut.successes")
     } catch {
       case e: Exception =>
         logger.error(s"Failed to run Spark-based bulk load for $sourceOfflineTable", e)
-        metricsContext.increment("bulkPut.spark.failures", Map("exception" -> e.getClass.getName))
+        metricsContext.increment("bulkPut.failures", Map("exception" -> e.getClass.getName))
         throw e
     }
   }
@@ -517,8 +517,8 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
         throw new RuntimeException(s"Export job failed with error: ${completedJob.getStatus.getError}")
       } else {
         logger.info("Export job completed successfully")
-        metricsContext.distribution("bulkPut.bigquery.latency", System.currentTimeMillis() - startTs)
-        metricsContext.increment("bulkPut.bigquery.successes")
+        metricsContext.distribution("bulkPut.latency", System.currentTimeMillis() - startTs)
+        metricsContext.increment("bulkPut.successes")
       }
     }
   }
