@@ -75,6 +75,10 @@ class DataStreamBuilderTest extends AnyFlatSpec {
     checkTopicInfo(parse("topic_name/host=X/port=Y"),
                    TopicInfo("topic_name", "kafka", Map("host" -> "X", "port" -> "Y")))
     checkTopicInfo(parse("topic_name"), TopicInfo("topic_name", "kafka", Map.empty))
+
+    // Test cases for double slash in parameter values
+    checkTopicInfo(parse("kafka://topic_name/host=X/ssl.truststore.location=//etc//kafka//truststore.jks"),
+                   TopicInfo("topic_name", "kafka", Map("host" -> "X", "ssl.truststore.location" -> "/etc/kafka/truststore.jks")))
   }
 
   def checkTopicInfo(actual: TopicInfo, expected: TopicInfo): Unit = {

@@ -18,6 +18,7 @@ class RunMode(str, Enum):
     METADATA_UPLOAD = "metadata-upload"
     FETCH = "fetch"
     CONSISTENCY_METRICS_COMPUTE = "consistency-metrics-compute"
+    BUILD_COMPARISON_TABLE = "build-comparison-table"
     COMPARE = "compare"
     LOCAL_STREAMING = "local-streaming"
     LOG_FLATTENER = "log-flattener"
@@ -52,6 +53,7 @@ SPARK_MODES = [
     RunMode.STREAMING,
     RunMode.STREAMING_CLIENT,
     RunMode.CONSISTENCY_METRICS_COMPUTE,
+    RunMode.BUILD_COMPARISON_TABLE,
     RunMode.COMPARE,
     RunMode.ANALYZE,
     RunMode.STATS_SUMMARY,
@@ -91,6 +93,7 @@ MODE_ARGS = {
     RunMode.METADATA_UPLOAD: ONLINE_WRITE_ARGS,
     RunMode.FETCH: ONLINE_ARGS,
     RunMode.CONSISTENCY_METRICS_COMPUTE: OFFLINE_ARGS,
+    RunMode.BUILD_COMPARISON_TABLE: OFFLINE_ARGS,
     RunMode.COMPARE: OFFLINE_ARGS,
     RunMode.LOCAL_STREAMING: ONLINE_WRITE_ARGS + " -d",
     RunMode.LOG_FLATTENER: OFFLINE_ARGS,
@@ -124,6 +127,7 @@ ROUTES = {
         RunMode.METADATA_UPLOAD: "metadata-upload",
         RunMode.FETCH: "fetch",
         RunMode.CONSISTENCY_METRICS_COMPUTE: "consistency-metrics-compute",
+        RunMode.BUILD_COMPARISON_TABLE: "build-comparison-table",
         RunMode.COMPARE: "compare-join-query",
         RunMode.STATS_SUMMARY: "stats-summary",
         RunMode.LOG_SUMMARY: "log-summary",

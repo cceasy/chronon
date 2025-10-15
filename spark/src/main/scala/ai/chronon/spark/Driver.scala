@@ -524,6 +524,21 @@ object Driver {
     }
   }
 
+  object BuildComparisonTable {
+    class Args extends Subcommand("build-comparison-table") with OfflineSubcommand {
+      override def subcommandName() = "build-comparison-table"
+    }
+
+    def run(args: Args): Unit = {
+      val joinConf = parseConf[api.Join](args.confPath())
+      new ConsistencyJob(
+        args.sparkSession,
+        joinConf,
+        args.endDate()
+      ).buildComparisonTable()
+    }
+  }
+
   object ConsistencyMetricsCompute {
     class Args extends Subcommand("consistency-metrics-compute") with OfflineSubcommand {
       override def subcommandName() = "consistency-metrics-compute"
@@ -1110,6 +1125,8 @@ object Driver {
     addSubcommand(JoinBackFillArgs)
     object LogFlattenerArgs extends LogFlattener.Args
     addSubcommand(LogFlattenerArgs)
+    object ComparisonTableArgs extends BuildComparisonTable.Args
+    addSubcommand(ComparisonTableArgs)
     object ConsistencyMetricsArgs extends ConsistencyMetricsCompute.Args
     addSubcommand(ConsistencyMetricsArgs)
     object GroupByBackfillArgs extends GroupByBackfill.Args
@@ -1180,6 +1197,7 @@ object Driver {
             GroupByUploadToKVBulkLoad.run(args.GroupByUploadToKVBulkLoadArgs)
           case args.FetcherCliArgs         => FetcherCli.run(args.FetcherCliArgs)
           case args.LogFlattenerArgs       => LogFlattener.run(args.LogFlattenerArgs)
+          case args.ComparisonTableArgs    => BuildComparisonTable.run(args.ComparisonTableArgs)
           case args.ConsistencyMetricsArgs => ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
           case args.CompareJoinQueryArgs   => CompareJoinQuery.run(args.CompareJoinQueryArgs)
           case args.AnalyzerArgs           => Analyzer.run(args.AnalyzerArgs)

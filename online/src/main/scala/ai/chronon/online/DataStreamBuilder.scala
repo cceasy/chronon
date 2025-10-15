@@ -24,6 +24,7 @@ import org.apache.spark.sql.DataFrame
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import java.security.MessageDigest
 import scala.collection.Seq
 import scala.util.Failure
 import scala.util.Success
@@ -31,6 +32,14 @@ import scala.util.Try
 
 case class TopicInfo(name: String, messageBus: String, params: Map[String, String])
 object TopicInfo {
+  @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
+
+  private def md5sum(input: String): String = {
+    val md = MessageDigest.getInstance("MD5")
+    val hashBytes = md.digest(input.getBytes("UTF-8"))
+    hashBytes.map("%02x".format(_)).mkString
+  }
+
   // default message bus is kafka
   // kafka://topic_name/schema=my_schema/host=X/port=Y should parse into TopicInfo(topic_name, kafka, {schema: my_schema, host: X, port Y})
   def parse(topic: String): TopicInfo = {
@@ -42,11 +51,20 @@ object TopicInfo {
       "kafka" -> topic
     }
     assert(rest.nonEmpty, s"invalid topic: $topic")
-    val fields = rest.split("/")
+    val escapedSlash = "___SLASH___"
+    val escapedRest = rest.replace("//", escapedSlash)
+
+    val fields = escapedRest.split("/")
     val topicName = fields.head
     val params = fields.tail.map { f =>
-      val kv = f.split("=", 2); kv.head -> kv.last
+      val kv = f.split("=", 2)
+      val key = kv.head
+      val value = if (kv.length > 1) kv.last.replace(escapedSlash, "/") else ""
+      key -> value
     }.toMap
+    params.foreach { case (k, v) =>
+      logger.info(s"topic param: $k -> ${v.substring(0, Math.min(5, v.length))}*** len=${v.length} md5=${md5sum(v)}")
+    }
     TopicInfo(topicName, messageBus, params)
   }
 }
