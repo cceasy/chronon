@@ -1,5 +1,5 @@
 click
-thrift==0.21.0
+thrift==0.20.0
 pyspark==3.5.4
 sqlglot
 crcmod==1.7

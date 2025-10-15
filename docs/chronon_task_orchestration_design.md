@@ -250,19 +250,21 @@ graph TB
 
 ### DAG Types Overview
 
-Based on the Chronon orchestration architecture, we will implement four main categories of DAGs:
+All DAGs in the Chronon orchestration system follow either a **team-based** or **single global** pattern. There are no config-based DAGs - even Join configs are organized by team:
 
 1. **GroupBy DAGs** (`group_by_dag_constructor.py`):
-   - `chronon_gb_backfill`: Single DAG for backfill historical feature snapshots, manually triggered
-   - `chronon_gb_batch_{team_name}`: Per-team DAG for generating feature snapshot or batch IR upload dataset, and uploading them to KV store
-   - `chronon_gb_streaming_{team_name}`: Per-team DAG running every 10 minutes for real-time GroupBys with "keep alive" logic
+   - `chronon_gb_backfill`: Single global DAG for manual backfill operations (no schedule)
+   - `chronon_gb_batch_{team}`: Team-based DAGs for daily batch processing and KV uploads
+   - `chronon_gb_streaming_{team}`: Team-based DAGs for streaming job keep-alive (every 10 minutes)
 
 2. **Join DAGs** (`join_dag_constructor.py`):
-   - `chronon_join_backfil`: Single DAG for backfill historical feature snapshots, manually triggered
-   - `chronon_join_ooc_{team_name}`: Per-team DAG for dump fetcher logs, build comparison table, compute consistency metrics
+   - `chronon_join_backfill`: Single global DAG for manual backfill operations (no schedule)
+   - `chronon_join_ooc_{team}`: Team-based DAGs for Online/Offline Consistency checks (daily)
 
-3. **Metadata DAG**:
-    - `chronon_metadata`: Single DAG running every 10 minutes to upload new/updated GroupBy and Join metadata to KV store
+3. **Metadata DAG** (`join_dag_constructor.py`):
+   - `chronon_metadata`: Single global DAG that uploads GroupBy and Join configs to KV store (every 10 minutes)
+   - Uses hash-based change detection to avoid unnecessary uploads
+   - Stores config directory hash in XCom for comparison between runs
 
 ### Directory Structure
 ```
@@ -286,104 +288,63 @@ airflow/
 
 ### Dynamic DAG Generation
 
-#### 1. Team-Based Configuration Discovery
-```python
-# helpers.py
-def walk_and_define_tasks(mode, conf_type, chronon_path, dag_constructor, dags={}):
-    """Walk through team directories and create tasks for each configuration"""
-    team_config = load_team_config()
+#### 1. Configuration Discovery Flow
+```mermaid
+graph TD
+    A[Scan Config Directory] --> B{Config Type}
+    B -->|group_bys| C[Group by Team]
+    B -->|joins| D[Group by Team]
 
-    config_dir = os.path.join(chronon_path, 'production', conf_type)
-    for team in os.listdir(config_dir):
-        team_dir = os.path.join(config_dir, team)
+    C --> E[Create Team-based DAGs]
+    D --> F[Create Team-based DAGs]
 
-        # For team-based DAGs (batch, streaming)
-        if mode in ['batch', 'streaming']:
-            dag_id = f"chronon_{mode}_dag_{team}"
-            if dag_id not in dags:
-                dag = dag_constructor(team, mode, team_config)
-                dags[dag_id] = dag
+    E --> G[GB Batch DAG per Team]
+    E --> H[GB Streaming DAG per Team]
 
-            # Add tasks for each config in team
-            for config_file in glob.glob(f"{team_dir}/*.json"):
-                with open(config_file) as f:
-                    config = json.load(f)
-                    if should_schedule(config, mode, conf_type):
-                        create_task_in_dag(dags[dag_id], config, mode)
+    F --> I[Join OOC DAG per Team]
 
-        # For per-config DAGs (joins, staging queries)
-        else:
-            for config_file in glob.glob(f"{team_dir}/*.json"):
-                with open(config_file) as f:
-                    config = json.load(f)
-                    if should_schedule(config, mode, conf_type):
-                        dag_id = f"chronon_{conf_type}_{config['metaData']['name']}"
-                        dag = dag_constructor(config, mode, conf_type, team_config)
-                        dags[dag_id] = dag
+    G --> J[Multiple Tasks per Config]
+    H --> K[Keep-alive Tasks per Config]
+    I --> L[Consistency Tasks per Config]
 
-    return dags
+    A --> M[Create Global DAGs]
+    M --> N[Metadata DAG]
+    M --> O[Backfill DAGs]
 ```
 
-#### 2. GroupBy DAG Constructors
-```python
-# group_by_dag_constructor.py
-def batch_constructor(team: str, mode: str, team_conf: Dict) -> DAG:
-    """Create batch processing DAG for a team"""
-    return DAG(
-        f"chronon_batch_dag_{team}",
-        default_args=task_default_args(team_conf, team),
-        start_date=datetime(2024, 1, 1),
-        schedule_interval='@daily',
-        catchup=False,
-        max_active_runs=1,
-        concurrency=GROUP_BY_BATCH_CONCURRENCY,
-        tags=['chronon', 'batch', team]
-    )
+The DAG generation follows a consistent team-based approach:
+- **All configs are organized by team** - no individual config-based DAGs
+- **Team-based DAGs** contain multiple tasks, one for each config belonging to that team
+- **Global DAGs** (backfill and metadata) operate across all teams
 
-def streaming_constructor(team: str, mode: str, team_conf: Dict) -> DAG:
-    """Create streaming DAG for real-time features"""
-    return DAG(
-        f"chronon_streaming_dag_{team}",
-        default_args=task_default_args(team_conf, team),
-        start_date=datetime(2024, 1, 1),
-        schedule_interval=timedelta(minutes=15),  # Keep-alive check every 15 mins
-        catchup=False,
-        max_active_runs=1,
-        tags=['chronon', 'streaming', team]
-    )
+#### 2. DAG Types and Scheduling
 
-# Initialize all DAGs
-all_dags = {}
-all_dags.update(
-    walk_and_define_tasks("batch", "group_bys", CHRONON_PATH, batch_constructor)
-)
-all_dags.update(
-    walk_and_define_tasks("streaming", "group_bys", CHRONON_PATH, streaming_constructor)
-)
-```
+| DAG Type | Schedule | Trigger | Description |
+|----------|----------|---------|-------------|
+| `chronon_gb_backfill` | None | Manual | Backfill historical GroupBy data with user-specified date range |
+| `chronon_gb_batch_{team}` | @daily | Automatic | Daily upload and KV store updates |
+| `chronon_gb_streaming_{team}` | */10 * * * * | Automatic | Keep-alive checks every 10 minutes |
+| `chronon_join_backfill` | None | Manual | Backfill historical Join data with user-specified date range |
+| `chronon_join_ooc_{team}` | @daily | Automatic | Daily consistency checks |
+| `chronon_metadata` | */10 * * * * | Automatic | Metadata uploads every 10 minutes |
 
-#### 3. Join DAG Constructor
-```python
-# join_dag_constructor.py
-def join_constructor(conf: Dict, mode: str, conf_type: str, team_conf: Dict) -> DAG:
-    """Create DAG for join backfill and frontfill"""
+#### 3. Task Dependency Management
 
-    join_name = conf['metaData']['name']
-    team = conf['metaData']['team']
+```mermaid
+graph LR
+    subgraph "GroupBy Batch DAG"
+        direction LR
+        S1[Sensor: Delta Table] --> U1[Upload Task]
+        U1 --> K1[Upload-to-KV Task]
+    end
 
-    return DAG(
-        f"chronon_join_{join_name}",
-        default_args=task_default_args(team_conf, team),
-        start_date=datetime(2024, 1, 1),
-        schedule_interval=get_offline_schedule(conf),
-        catchup=False,
-        max_active_runs=1,
-        concurrency=JOIN_CONCURRENCY,
-        tags=['chronon', 'join', team]
-    )
-
-# Initialize join DAGs
-join_dags = walk_and_define_tasks("backfill", "joins", CHRONON_PATH, join_constructor)
+    subgraph "Join OOC DAG"
+        direction LR
+        S2[Sensor: Fetcher Logs] --> F[Flatten Logs]
+        F --> B[Build Comparison]
+        B --> C[Compute Metrics]
+        C --> P[Publish Metrics]
+    end
 ```
 
 ### Dependency Resolution
@@ -475,202 +436,81 @@ def create_dependency_sensors(dependencies: List[Dependency], dag: DAG) -> List:
 
 ### Execution Flow
 
-#### 1. Chronon Operator for GCP
+#### 1. Chronon Operator Architecture
+
+The `ChrononGCPOperator` extends BashOperator with GCP-specific functionality, construct the final zipline cli cmd and arguments according to specific tasks.
+
+#### 2. Operator Implementation Details
+
+**ChrononGCPOperator** key methods:
+- `__init__()`: Initialize with mode, config path, and execution parameters
+- `execute()`: Main execution logic with Dataproc or local mode
+- `_execute_on_dataproc()`: Manages cluster lifecycle and job submission
+- `_build_zipline_args()`: Constructs command-line arguments for Zipline
+- `_get_cluster_config()`: Returns optimized cluster configuration per job type
+
+**StreamingKeepAliveOperator** for Flink jobs:
+- Checks if streaming job is running
+- Restarts failed jobs automatically
+- Manages Flink job lifecycle on Dataproc
+
+**MetadataUploadOperator** for config synchronization:
+- Calculates MD5 hash of entire config directory recursively
+- Compares with previous hash stored in XCom
+- Only uploads changes when hash differs
+- Filters configs based on type (GroupBy: online only, Join: all)
+- Stores new hash for next comparison
+
+#### 3. Metadata DAG Implementation
+
+The metadata DAG uses hash-based change detection to efficiently sync configurations:
+
 ```python
-# operators.py
-class ChrononGCPOperator(BashOperator):
-    """
-    Main Operator for running Chronon Jobs on GCP.
-    Extends the base ChrononOperator with GCP-specific functionality.
-    """
-    REQUIRED_PARAMS = ["production", "team", "name"]
+# MetadataUploadOperator key implementation
+class MetadataUploadOperator(BaseOperator):
+    def _calculate_config_hash(self, config_dir: str) -> str:
+        """Calculate recursive MD5 hash of all JSON configs"""
+        hash_md5 = hashlib.md5()
+        config_data = {}
 
-    def __init__(self, conf_path, mode, repo, conf_type, use_dataproc=True, extra_args={}, *args, **kwargs):
-        self.mode = mode
-        self.conf_path = os.path.join(repo, conf_path)
-        self.repo = repo
-        self.conf_type = conf_type
-        self.use_dataproc = use_dataproc
-        self.extra_args = extra_args
+        for root, dirs, files in os.walk(config_dir):
+            for file in sorted(files):
+                if file.endswith('.json'):
+                    file_path = os.path.join(root, file)
+                    with open(file_path, 'rb') as f:
+                        file_hash = hashlib.md5(f.read()).hexdigest()
+                        config_data[relative_path] = file_hash
 
-        # Build the Zipline command instead of run.py
-        extra_args_fmt = " ".join([f"--{arg_key} {arg_val}" for (arg_key, arg_val) in extra_args.items()])
-        conf_arg = f"--conf={self.conf_path}" if conf_path else ""
-
-        if use_dataproc:
-            # For Dataproc execution, we'll override in execute()
-            bash_command = "echo 'Will be executed on Dataproc'"
-        else:
-            # For local execution
-            bash_command = f"zipline run --mode={mode} {conf_arg} {extra_args_fmt}"
-
-        env = {
-            "CHRONON_REPO_PATH": repo,
-            "USER": getpass.getuser(),
-            "GCP_PROJECT": GCP_PROJECT,
-            "ARTIFACT_PREFIX": ARTIFACT_PREFIX
-        }
-
-        super().__init__(bash_command=bash_command, env=env, *args, **kwargs)
+        # Create deterministic hash string
+        hash_string = json.dumps(config_data, sort_keys=True)
+        hash_md5.update(hash_string.encode('utf-8'))
+        return hash_md5.hexdigest()
 
     def execute(self, context):
-        if self.use_dataproc:
-            return self._execute_on_dataproc(context)
-        else:
-            return super().execute(context)
-
-    def _execute_on_dataproc(self, context):
-        """Execute Chronon job on Dataproc cluster"""
-        from airflow.providers.google.cloud.operators.dataproc import (
-            DataprocCreateClusterOperator,
-            DataprocSubmitJobOperator,
-            DataprocDeleteClusterOperator
+        # Get current and previous hash
+        current_hash = self._calculate_config_hash(config_dir)
+        previous_hash = context['task_instance'].xcom_pull(
+            task_ids=self.task_id,
+            key='config_hash',
+            include_prior_dates=True
         )
 
-        # Generate unique cluster name
-        cluster_name = f"chronon-{self.mode}-{context['ds_nodash']}-{uuid.uuid4().hex[:8]}"
+        if previous_hash == current_hash:
+            self.log.info("No changes detected, skipping upload")
+            return {"status": "skipped", "hash": current_hash}
 
-        # Cluster configuration based on job type
-        cluster_config = self._get_cluster_config()
-
-        # Create cluster
-        create_op = DataprocCreateClusterOperator(
-            task_id=f"create_cluster_{cluster_name}",
-            cluster_name=cluster_name,
-            cluster_config=cluster_config,
-            region=GCP_REGION,
-            project_id=GCP_PROJECT
-        )
-
-        # Build Zipline command
-        zipline_args = self._build_zipline_args(context)
-
-        # Submit job
-        submit_op = DataprocSubmitJobOperator(
-            task_id=f"submit_job_{cluster_name}",
-            job={
-                "placement": {"cluster_name": cluster_name},
-                "pyspark_job": {
-                    "main_python_file_uri": f"gs://{GCS_BUCKET}/zipline/run.py",
-                    "args": zipline_args,
-                    "jar_file_uris": [f"gs://{GCS_BUCKET}/jars/chronon-spark.jar"],
-                    "properties": {
-                        "spark.sql.adaptive.enabled": "true",
-                        "spark.sql.adaptive.coalescePartitions.enabled": "true"
-                    }
-                }
-            },
-            region=GCP_REGION,
-            project_id=GCP_PROJECT
-        )
-
-        # Delete cluster
-        delete_op = DataprocDeleteClusterOperator(
-            task_id=f"delete_cluster_{cluster_name}",
-            cluster_name=cluster_name,
-            region=GCP_REGION,
-            project_id=GCP_PROJECT,
-            trigger_rule="all_done"
-        )
-
-        # Execute in sequence
-        create_op.execute(context)
-        try:
-            result = submit_op.execute(context)
-        finally:
-            delete_op.execute(context)
-
-        return result
-
-    def _build_zipline_args(self, context) -> List[str]:
-        """Build Zipline command arguments"""
-        args = [
-            "--mode", self.mode,
-            "--conf", self.conf_path,
-            "--artifact-prefix", ARTIFACT_PREFIX,
-            "--version", ZIPLINE_VERSION
-        ]
-
-        # Add date parameters based on mode
-        if self.mode == "backfill":
-            args.extend(["--start-ds", context['start_ds'], "--end-ds", context['end_ds']])
-        else:
-            args.extend(["--ds", context['ds']])
-
-        # Add extra arguments
-        for key, value in self.extra_args.items():
-            args.extend([f"--{key}", str(value)])
-
-        return args
-
-    def _get_cluster_config(self) -> Dict:
-        """Get Dataproc cluster configuration based on job mode"""
-        base_config = {
-            "master_config": {
-                "num_instances": 1,
-                "machine_type_uri": "n2-standard-4"
-            },
-            "software_config": {
-                "image_version": "2.1-debian11",
-                "properties": {
-                    "spark:spark.executor.memory": "4g",
-                    "spark:spark.driver.memory": "4g"
-                }
-            }
-        }
-
-        if self.mode in ["backfill", "upload"]:
-            # Larger cluster for batch jobs
-            base_config["worker_config"] = {
-                "num_instances": 5,
-                "machine_type_uri": "n2-highmem-4"
-            }
-        else:
-            # Smaller cluster for incremental jobs
-            base_config["worker_config"] = {
-                "num_instances": 2,
-                "machine_type_uri": "n2-standard-4"
-            }
-
-        return base_config
+        # Upload changed configs to Bigtable
+        # Store new hash for next run
+        context['task_instance'].xcom_push(key='config_hash', value=current_hash)
 ```
 
-#### 2. Streaming Job Operator
-```python
-class StreamingKeepAliveOperator(BaseOperator):
-    """
-    Operator for managing streaming jobs with keep-alive logic.
-    Checks if streaming job is running, restarts if needed.
-    """
+This approach ensures:
+- Minimal KV store writes (only when configs change)
+- Fast change detection (MD5 hash comparison)
+- Persistent state across DAG runs (XCom storage)
+- Atomic updates (all-or-nothing upload)
 
-    def __init__(self, conf_path: str, **kwargs):
-        super().__init__(**kwargs)
-        self.conf_path = conf_path
-
-    def execute(self, context):
-        # Check if streaming job is running
-        job_name = self._get_job_name()
-
-        if self._is_job_running(job_name):
-            self.log.info(f"Streaming job {job_name} is already running")
-            return
-
-        # Start or restart the job
-        self.log.info(f"Starting streaming job {job_name}")
-        self._start_streaming_job(context)
-
-    def _is_job_running(self, job_name: str) -> bool:
-        """Check if Flink job is running on Dataproc"""
-        # Implementation to check Flink job status
-        pass
-
-    def _start_streaming_job(self, context):
-        """Start Flink streaming job on Dataproc"""
-        # Implementation to submit Flink job
-        pass
-```
-
-#### 3. Complete Team-Based DAG Example
+#### 4. Complete DAG Examples
 ```python
 # group_by_dag_constructor.py
 def create_team_batch_dag(team: str, configs: List[Dict]) -> DAG:

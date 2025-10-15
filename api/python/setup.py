@@ -63,7 +63,7 @@ setup(
     },
     description="Zipline python API library",
     install_requires=basic_requirements,
-    name="zipline-ai",
+    name="awx-zipline-ai",
     packages=find_packages(),
     include_package_data=True,
     package_data={"ai.chronon": ["resources/**/*"]},
