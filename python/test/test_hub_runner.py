@@ -49,7 +49,6 @@ class TestHubRunner:
             '--conf', online_join_conf,
             '--start-ds', '2024-01-15',
             '--end-ds', '2024-02-15',
-            '--force-recompute'
         ])
 
         assert result.exit_code == 0
@@ -67,7 +66,6 @@ class TestHubRunner:
         assert json_payload['mode'] == "backfill"
         assert json_payload['start'] == "2024-01-15"
         assert json_payload['end'] == "2024-02-15"
-        assert json_payload['forceRecompute'] == True
         assert json_payload['branch'] == "test-branch"
 
         # Check headers
@@ -95,7 +93,6 @@ class TestHubRunner:
             '--conf', online_join_conf,
             '--start-ds', '2024-01-15',
             '--end-ds', '2024-02-15',
-            '--force-recompute'
         ])
 
         # start-ds is not supported

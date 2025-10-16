@@ -58,16 +58,7 @@ def end_ds_option(func):
     )(func)
 
 
-def force_recompute_option(func):
-    return click.option(
-        "--force-recompute",
-        is_flag=True,
-        default=False,
-        help="Force recompute the backfill even if the data is already present in the output table.",
-    )(func)
-
-
-def submit_workflow(repo, conf, mode, start_ds, end_ds, force_recompute=False, hub_url=None):
+def submit_workflow(repo, conf, mode, start_ds, end_ds, hub_url=None):
     hub_conf = get_hub_conf(conf, root_dir=repo)
     if hub_url is not None:
         zipline_hub = ZiplineHub(base_url=hub_url, sa_name=hub_conf.sa_name)
@@ -91,7 +82,6 @@ def submit_workflow(repo, conf, mode, start_ds, end_ds, force_recompute=False, h
         start=start_ds,
         end=end_ds,
         conf_hash=conf_name_to_hash_dict[conf_name].hash,
-        force_recompute=force_recompute,
         skip_long_running=False,
     )
 
@@ -146,9 +136,8 @@ def submit_schedule(repo, conf, hub_url=None):
 @common_options
 @start_ds_option
 @end_ds_option
-@force_recompute_option
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
-def backfill(repo, conf, hub_url, start_ds, end_ds, force_recompute):
+def backfill(repo, conf, hub_url, start_ds, end_ds):
     """
     - Submit a backfill job to Zipline.
     Response should contain a list of confs that are different from what's on remote.
@@ -156,7 +145,7 @@ def backfill(repo, conf, hub_url, start_ds, end_ds, force_recompute):
     - Call the actual run API with mode set to backfill.
     """
     submit_workflow(
-        repo, conf, RunMode.BACKFILL.value, start_ds, end_ds, force_recompute, hub_url=hub_url
+        repo, conf, RunMode.BACKFILL.value, start_ds, end_ds, hub_url=hub_url
     )
 
 

@@ -51,7 +51,6 @@ class TestZiplineHub:
                 "user": "user1",
                 "start": expected_start,
                 "end": expected_end,
-                "forceRecompute": False,
                 "skipLongRunningNodes": False
             },
             headers={"Content-Type": "application/json"}

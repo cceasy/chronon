@@ -234,7 +234,6 @@ class ZiplineHub:
         conf_hash,
         start=None,
         end=None,
-        force_recompute=False,
         skip_long_running=False,
     ):
         url = f"{self.base_url}/workflow/v2/start"
@@ -252,7 +251,6 @@ class ZiplineHub:
             "user": user,
             "start": start_dt,
             "end": end_dt,
-            "forceRecompute": force_recompute,
             "skipLongRunningNodes": skip_long_running,
         }
         headers = {"Content-Type": "application/json"}
