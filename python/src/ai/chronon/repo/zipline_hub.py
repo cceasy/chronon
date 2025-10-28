@@ -178,6 +178,18 @@ class ZiplineHub:
             print(f" ❌ Error deploying schedule: {e}")
             raise e
 
+    def call_cancel_api(self, workflow_id):
+        url = f"{self.base_url}/workflow/v2/{workflow_id}/cancel"
+
+        try:
+            response = requests.post(url, headers=self.auth_headers(self.base_url))
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            self.handle_unauth(e, "workflow cancel")
+            print(f" ❌ Error calling workflow cancel API: {e}")
+            raise e
+
     def call_sync_api(self, branch: str, names_to_hashes: dict[str, str]) -> Optional[list[str]]:
         url = f"{self.base_url}/upload/v2/sync"
 

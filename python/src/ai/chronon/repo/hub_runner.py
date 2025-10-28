@@ -16,6 +16,18 @@ from ai.chronon.repo.zipline_hub import ZiplineHub
 
 ALLOWED_DATE_FORMATS = ["%Y-%m-%d"]
 
+@dataclass
+class HubConfig:
+    hub_url: str
+    frontend_url: str
+    sa_name: Optional[str] = None
+    eval_url: Optional[str] = None
+
+
+@dataclass
+class ScheduleModes:
+    online: str
+    offline_schedule: str
 
 @click.group()
 def hub():
@@ -52,6 +64,14 @@ def start_ds_option(func):
         "It could leave holes in your final output table due to the override date range.",
     )(func)
 
+def workflow_id_option(func):
+    return click.option(
+        "--workflow-id",
+        help="Zipline workflow id",
+        type=str,
+        required=True,
+    )(func)
+
 
 def end_ds_option(func):
     return click.option(
@@ -61,13 +81,16 @@ def end_ds_option(func):
         default=str(date.today() - timedelta(days=2)),
     )(func)
 
-
-def submit_workflow(repo, conf, mode, start_ds, end_ds, hub_url=None, use_auth=True):
-    hub_conf = get_hub_conf(conf, root_dir=repo)
+def _get_zipline_hub(hub_url: Optional[str], hub_conf: Optional[HubConfig], use_auth: bool):
     if hub_url is not None:
         zipline_hub = ZiplineHub(base_url=hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth)
     else:
         zipline_hub = ZiplineHub(base_url=hub_conf.hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth)
+    return zipline_hub
+
+def submit_workflow(repo, conf, mode, start_ds, end_ds, hub_url=None, use_auth=True):
+    hub_conf = get_hub_conf(conf, root_dir=repo)
+    zipline_hub = _get_zipline_hub(hub_url, hub_conf, use_auth)
     conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
     branch = get_current_branch()
 
@@ -102,10 +125,7 @@ def submit_workflow(repo, conf, mode, start_ds, end_ds, hub_url=None, use_auth=T
 
 def submit_schedule(repo, conf, hub_url=None, use_auth=True):
     hub_conf = get_hub_conf(conf, root_dir=repo)
-    if hub_url is not None:
-        zipline_hub = ZiplineHub(base_url=hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth)
-    else:
-        zipline_hub = ZiplineHub(base_url=hub_conf.hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth)
+    zipline_hub = _get_zipline_hub(hub_url, hub_conf, use_auth)
     conf_name_to_obj_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
     branch = get_current_branch()
 
@@ -181,6 +201,14 @@ def schedule(repo, conf, hub_url, use_auth):
     """
     submit_schedule(repo, conf, hub_url=hub_url, use_auth=use_auth)
 
+@hub.command()
+@common_options
+@workflow_id_option
+def cancel(repo, conf, hub_url, use_auth, workflow_id):
+    zipline_hub = _get_zipline_hub(hub_url, get_hub_conf(conf, root_dir=repo), use_auth)
+    zipline_hub.call_cancel_api(workflow_id)
+    print(f" 🟢 Workflow cancelled: {workflow_id}")
+
 
 def get_metadata_map(file_path):
     with open(file_path, "r") as f:
@@ -237,23 +265,8 @@ def eval(repo, conf, hub_url, use_auth, eval_url):
         sys.exit(1)
 
 
-
-@dataclass
-class HubConfig:
-    hub_url: str
-    frontend_url: str
-    sa_name: Optional[str] = None
-    eval_url: Optional[str] = None
-
-
-@dataclass
-class ScheduleModes:
-    online: str
-    offline_schedule: str
-
-
 def get_hub_conf(conf_path, root_dir="."):
-    """ 
+    """
     Get the hub configuration from the config file or environment variables.
     This method is used when the args are not provided.
     Priority is arg -> environment variable -> common env.
