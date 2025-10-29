@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from typing import Optional
 
 import click
+import requests
 from gen_thrift.planner.ttypes import Mode
 
 from ai.chronon.cli.git_utils import get_current_branch
@@ -25,6 +26,7 @@ class HubConfig:
     frontend_url: str
     sa_name: Optional[str] = None
     eval_url: Optional[str] = None
+    fetcher_url: Optional[str] = None
 
 
 @dataclass
@@ -46,6 +48,19 @@ def hub_url_option(func):
     return click.option(
         "--hub_url", help="Zipline Hub address, e.g. http://localhost:3903", default=None
     )(func)
+
+
+def get_conf_type(conf):
+    if "compiled/joins" in conf:
+        return "joins"
+    elif "compiled/staging_queries" in conf:
+        return "stagingqueries"
+    elif "compiled/group_by" in conf:
+        return "groupbys"
+    elif "compiled/models" in conf:
+        return "models"
+    else:
+        raise ValueError(f"Unsupported conf type: {conf}")
 
 #### Common click options
 def common_options(func):
@@ -239,6 +254,72 @@ def get_common_env_map(file_path, skip_metadata_extraction=False):
     common_env_map = metadata_map["executionInfo"]["env"]["common"]
     return common_env_map
 
+
+# zipline hub fetch --conf=compiled/joins/join
+# call the zipline fetcher from the hub
+@hub.command()
+@common_options
+@click.option(
+    "--fetcher-url",
+    help="Fetcher Server",
+    type=str,
+    default=None
+)
+@click.option(
+    "--schema",
+    help="Get only the schema",
+    is_flag=True,
+)
+@click.option(
+    "--key-json",
+    help="Json of the keys to fetch",
+    type=str,
+    default=None
+)
+@handle_conf_not_found(log_error=True, callback=print_possible_confs)
+def fetch(repo, conf, hub_url, use_auth, fetcher_url, schema, key_json):
+    """
+    - Fetch data from the fetcher server.
+    - If schema is True, fetch the schema of the join.
+    - If schema is False, fetch the data of the join.
+    """
+    hub_conf = get_hub_conf(conf, root_dir=repo)
+    fetcher_url = fetcher_url or hub_conf.fetcher_url
+    r = requests.get(f"{fetcher_url}/ping", timeout=100)
+    if r.status_code != 200:
+        print(f"Fetcher server is not running. Please start the fetcher server and try again. Url: {fetcher_url}/ping Status code: {r.status_code}")
+        sys.exit(1)
+    # Figure out if it's a group by or join
+    conf_type = get_conf_type(conf)
+    target = utils.get_metadata_name_from_conf(repo, conf)
+    endpoint = "/v1/fetch/{conf_type}".format(conf_type=conf_type[:-1])
+    if schema:
+        if conf_type != "joins":
+            raise ValueError("Schema is only supported for joins")
+        endpoint = f"/v1/join/{target}/schema"
+    headers = {"Content-Type": "application/json"}
+    try:
+        if schema:
+            url = f"{fetcher_url}{endpoint}"
+            response = requests.get(url, headers=headers, timeout=100)
+        else:
+            url = f"{fetcher_url}{endpoint}/{target}"
+            key_json = json.loads(key_json)
+            response = requests.post(url, headers=headers, json=key_json, timeout=100)
+        if response.status_code != 200:
+            raise requests.RequestException(f"Request failed: {url} with status code: {response.status_code}\nResponse: {response.text}")
+        print(json.dumps(response.json(), indent=4))
+    except requests.RequestException as e:
+        print(f"""
+        Request failed for url: {url}
+        The conditions for a successful fetch are:
+        - Metadata has been uploaded to the KV Store (run-adhoc command or schedule command)
+        - The join needs to be online.
+        Please verify the above conditions and try again.
+        Error: {e}
+        """)
+        sys.exit(1)
+
 # zipline hub eval --conf=compiled/joins/join
 # localSparkSession evaluation of conf
 @hub.command()
@@ -333,17 +414,7 @@ def get_schedule_modes(conf_path):
 def print_wf_url(conf, conf_name, mode, workflow_id, repo="."):
     hub_conf = get_hub_conf(conf, root_dir=repo)
     frontend_url = hub_conf.frontend_url
-
-    if "compiled/joins" in conf:
-        hub_conf_type = "joins"
-    elif "compiled/staging_queries" in conf:
-        hub_conf_type = "stagingqueries"
-    elif "compiled/group_by" in conf:
-        hub_conf_type = "groupbys"
-    elif "compiled/models" in conf:
-        hub_conf_type = "models"
-    else:
-        raise ValueError(f"Unsupported conf type: {conf}")
+    hub_conf_type = get_conf_type(conf)
 
     def _mode_string():
         if mode == "backfill":
