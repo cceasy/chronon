@@ -487,11 +487,7 @@ object Driver {
 
     def run(args: Args): Unit = {
       val tableUtils = args.buildTableUtils()
-      val stagingQueryJob = new StagingQuery(
-        args.stagingQueryConf,
-        args.endDate(),
-        tableUtils
-      )
+      val stagingQueryJob = StagingQuery.from(args.stagingQueryConf, args.endDate(), tableUtils)
       stagingQueryJob.computeStagingQuery(args.stepDays.toOption,
                                           args.enableAutoExpand.toOption,
                                           args.startPartitionOverride.toOption,
