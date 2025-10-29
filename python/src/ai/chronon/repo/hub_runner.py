@@ -16,6 +16,8 @@ from ai.chronon.repo.zipline_hub import ZiplineHub
 
 ALLOWED_DATE_FORMATS = ["%Y-%m-%d"]
 
+DEFAULT_TEAM_METADATA_CONF = "compiled/teams_metadata/default/default_team_metadata"
+
 @dataclass
 class HubConfig:
     hub_url: str
@@ -33,17 +35,23 @@ class ScheduleModes:
 def hub():
     pass
 
+def repo_option(func):
+    return click.option("--repo", help="Path to chronon repo", default=".")(func)
+def use_auth_option(func):
+    return click.option(
+        "--use-auth/--no-use-auth", help="Use authentication when connecting to Zipline Hub", default=True
+    )(func)
+def hub_url_option(func):
+    return click.option(
+        "--hub_url", help="Zipline Hub address, e.g. http://localhost:3903", default=None
+    )(func)
 
 #### Common click options
 def common_options(func):
-    func = click.option("--repo", help="Path to chronon repo", default=".")(func)
+    func = repo_option(func)
     func = click.option("--conf", required=True, help="Conf param - required for every mode")(func)
-    func = click.option(
-        "--hub_url", help="Zipline Hub address, e.g. http://localhost:3903", default=None
-    )(func)
-    func = click.option(
-        "--use-auth/--no-use-auth", help="Use authentication when connecting to Zipline Hub", default=True
-    )(func)
+    func = hub_url_option(func)
+    func = use_auth_option(func)
     return func
 
 
@@ -202,23 +210,28 @@ def schedule(repo, conf, hub_url, use_auth):
     submit_schedule(repo, conf, hub_url=hub_url, use_auth=use_auth)
 
 @hub.command()
-@common_options
+@repo_option
+@hub_url_option
+@use_auth_option
 @workflow_id_option
-def cancel(repo, conf, hub_url, use_auth, workflow_id):
-    zipline_hub = _get_zipline_hub(hub_url, get_hub_conf(conf, root_dir=repo), use_auth)
+def cancel(repo, hub_url, use_auth, workflow_id):
+    zipline_hub = _get_zipline_hub(hub_url, get_hub_conf_from_metadata_conf(DEFAULT_TEAM_METADATA_CONF, root_dir=repo), use_auth)
     zipline_hub.call_cancel_api(workflow_id)
     print(f" 🟢 Workflow cancelled: {workflow_id}")
 
-
-def get_metadata_map(file_path):
+def load_json(file_path):
     with open(file_path, "r") as f:
         data = json.load(f)
+    return data
+
+def get_metadata_map(file_path):
+    data = load_json(file_path)
     metadata_map = data["metaData"]
     return metadata_map
 
 
-def get_common_env_map(file_path):
-    metadata_map = get_metadata_map(file_path)
+def get_common_env_map(file_path, skip_metadata_extraction=False):
+    metadata_map = get_metadata_map(file_path) if not skip_metadata_extraction else load_json(file_path)
     common_env_map = metadata_map["executionInfo"]["env"]["common"]
     return common_env_map
 
@@ -280,6 +293,21 @@ def get_hub_conf(conf_path, root_dir="."):
     eval_url = common_env_map.get("EVAL_URL")
     return HubConfig(hub_url=hub_url, frontend_url=frontend_url, sa_name=sa_name, eval_url=eval_url)
 
+def get_hub_conf_from_metadata_conf(metadata_path, root_dir="."):
+    """
+    Get the hub configuration from the config file or environment variables.
+    This method is used when the args are not provided.
+    Priority is arg -> environment variable -> common env.
+    """
+    file_path = os.path.join(root_dir, metadata_path)
+    common_env_map = get_common_env_map(file_path, skip_metadata_extraction=True)
+    common_env_map.update(os.environ) # Override config with cli args
+    hub_url = common_env_map.get("HUB_URL")
+    frontend_url = common_env_map.get("FRONTEND_URL")
+    sa_name = common_env_map.get("SA_NAME")
+    eval_url = common_env_map.get("EVAL_URL")
+    return HubConfig(hub_url=hub_url, frontend_url=frontend_url, sa_name=sa_name, eval_url=eval_url)
+
 
 def get_schedule_modes(conf_path):
     metadata_map = get_metadata_map(conf_path)
@@ -323,7 +351,6 @@ def print_wf_url(conf, conf_name, mode, workflow_id, repo="."):
     workflow_url = f"{frontend_url.rstrip('/')}/{hub_conf_type}/{conf_name}/{_mode_string()}?workflowId={workflow_id}"
 
     print(" 🔗 Workflow : " + workflow_url + "\n")
-
 
 if __name__ == "__main__":
     hub()
