@@ -9,9 +9,10 @@ import click
 from gen_thrift.planner.ttypes import Mode
 
 from ai.chronon.cli.git_utils import get_current_branch
+from ai.chronon.click_helpers import handle_compile, handle_conf_not_found
 from ai.chronon.repo import hub_uploader, utils
 from ai.chronon.repo.constants import RunMode
-from ai.chronon.repo.utils import handle_conf_not_found, print_possible_confs
+from ai.chronon.repo.utils import print_possible_confs
 from ai.chronon.repo.zipline_hub import ZiplineHub
 
 ALLOWED_DATE_FORMATS = ["%Y-%m-%d"]
@@ -169,7 +170,8 @@ def submit_schedule(repo, conf, hub_url=None, use_auth=True):
 @start_ds_option
 @end_ds_option
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
-def backfill(repo, conf, hub_url, use_auth, start_ds, end_ds):
+@handle_compile
+def backfill(repo, conf, hub_url, use_auth, start_ds, end_ds, skip_compile):
     """
     - Submit a backfill job to Zipline.
     Response should contain a list of confs that are different from what's on remote.
@@ -187,7 +189,8 @@ def backfill(repo, conf, hub_url, use_auth, start_ds, end_ds):
 @common_options
 @end_ds_option
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
-def run_adhoc(repo, conf, hub_url, use_auth, end_ds):
+@handle_compile
+def run_adhoc(repo, conf, hub_url, use_auth, end_ds, skip_compile):
     """
     - Submit a one-off deploy job to Zipline. This submits the various jobs to allow your conf to be tested online.
     Response should contain a list of confs that are different from what's on remote.
@@ -201,7 +204,8 @@ def run_adhoc(repo, conf, hub_url, use_auth, end_ds):
 @hub.command()
 @common_options
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
-def schedule(repo, conf, hub_url, use_auth):
+@handle_compile
+def schedule(repo, conf, hub_url, use_auth, skip_compile):
     """
     - Deploys a schedule for the specified conf to Zipline. This allows your conf to have various associated jobs run on a schedule.
     This verb will introspect your conf to determine which of its jobs need to be scheduled (or paused if turned off) based on the
@@ -246,7 +250,8 @@ def get_common_env_map(file_path, skip_metadata_extraction=False):
     default=None
 )
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
-def eval(repo, conf, hub_url, use_auth, eval_url):
+@handle_compile
+def eval(repo, conf, hub_url, use_auth, eval_url, skip_compile):
     """
     - Submit a eval job to Zipline.
     Response should contain a list of validation checks that are executed in a sparkLocalSession with Metadata access.
