@@ -174,11 +174,8 @@ fi
 fail_if_bash_failed
 
 echo -e "${GREEN}<<<<< .....................................STAGING-QUERY.....................................>>>>>\033[0m"
-if [[ "$ENVIRONMENT" == "canary" ]]; then
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode backfill --conf compiled/staging_queries/gcp/exports_${SUFFIX_VALUE}.checkouts_test__0 --start-ds $START_DS --end-ds $END_DS
-else
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode backfill --conf compiled/staging_queries/gcp/exports_${SUFFIX_VALUE}.checkouts_dev__0 --start-ds $START_DS --end-ds $END_DS
-fi
+zipline run --repo=$CHRONON_ROOT --version $VERSION --mode backfill --conf compiled/staging_queries/gcp/exports_${SUFFIX_VALUE}.checkouts__0 --start-ds $START_DS --end-ds $END_DS
+
 fail_if_bash_failed
 
 # Need to wait for upload-to-kv to finish
@@ -210,7 +207,6 @@ if [[ "$ENVIRONMENT" == "canary" ]]; then
   bq rm -f -t canary-443022:data.gcp_training_set_${SUFFIX_VALUE}_v1_test__0
   bq rm -f -t canary-443022:data.gcp_purchases_${SUFFIX_VALUE}_v1_test_notds__0
   bq rm -f -t canary-443022:data.gcp_training_set_${SUFFIX_VALUE}_v1_test_notds__0
-  bq rm -f -t canary-443022:data.gcp_exports_${SUFFIX_VALUE}_checkouts_test__0
 
 else
   bq rm -f -t canary-443022:data.gcp_purchases_${SUFFIX_VALUE}_v1_dev__0
@@ -218,5 +214,6 @@ else
   bq rm -f -t canary-443022:data.gcp_training_set_${SUFFIX_VALUE}_v1_dev__0
   bq rm -f -t canary-443022:data.gcp_purchases_${SUFFIX_VALUE}_v1_dev_notds__0
   bq rm -f -t canary-443022:data.gcp_training_set_${SUFFIX_VALUE}_v1_dev_notds__0
-  bq rm -f -t canary-443022:data.gcp_exports_${SUFFIX_VALUE}_checkouts_dev__0
 fi
+
+bq rm -f -t canary-443022:data.gcp_exports_${SUFFIX_VALUE}_checkouts__0
