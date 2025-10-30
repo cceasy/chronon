@@ -1,8 +1,9 @@
 package ai.chronon.flink.test
 
+import ai.chronon.api.Extensions.GroupByOps
 import ai.chronon.api.{GroupBy, TilingUtils}
 import ai.chronon.api.ScalaJavaConversions._
-import ai.chronon.flink.{FlinkJob, SparkExpressionEval, SparkExpressionEvalFn}
+import ai.chronon.flink.{FlinkGroupByStreamingJob, SparkExpressionEval, SparkExpressionEvalFn}
 import ai.chronon.flink.types.TimestampedIR
 import ai.chronon.flink.types.TimestampedTile
 import ai.chronon.flink.types.WriteResponse
@@ -153,13 +154,14 @@ class FlinkJobEventIntegrationTest extends AnyFlatSpec with BeforeAndAfter {
     expectedFinalIRsPerKey shouldBe finalIRsPerKey
   }
 
-  private def buildFlinkJob(groupBy: GroupBy, elements: Seq[E2ETestEvent]): (FlinkJob, GroupByServingInfoParsed) = {
-    val sparkExpressionEvalFn = new SparkExpressionEvalFn(Encoders.product[E2ETestEvent], groupBy)
+  private def buildFlinkJob(groupBy: GroupBy, elements: Seq[E2ETestEvent]): (FlinkGroupByStreamingJob, GroupByServingInfoParsed) = {
+    val query = SparkExpressionEval.queryFromGroupBy(groupBy)
+    val sparkExpressionEvalFn = new SparkExpressionEvalFn(Encoders.product[E2ETestEvent], query, groupBy.metaData.name, groupBy.dataModel)
     val source = new WatermarkedE2EEventSource(elements, sparkExpressionEvalFn)
 
     // Prepare the Flink Job
     val encoder = Encoders.product[E2ETestEvent]
-    val outputSchema = new SparkExpressionEval(encoder, groupBy).getOutputSchema
+    val outputSchema = new SparkExpressionEval(encoder, query, groupBy.getMetaData.getName, groupBy.dataModel).getOutputSchema
     val outputSchemaDataTypes = outputSchema.fields.map { field =>
       (field.name, SparkConversions.toChrononType(field.name, field.dataType))
     }
@@ -169,7 +171,7 @@ class FlinkJobEventIntegrationTest extends AnyFlatSpec with BeforeAndAfter {
     val mockApi = mock[Api](withSettings().serializable())
     val writerFn = new MockAsyncKVStoreWriter(Seq(true), mockApi, groupBy.metaData.name)
     val topicInfo = TopicInfo.parse("kafka://test-topic")
-    (new FlinkJob(source,
+    (new FlinkGroupByStreamingJob(source,
                   outputSchemaDataTypes,
                   writerFn,
                   groupByServingInfoParsed,
