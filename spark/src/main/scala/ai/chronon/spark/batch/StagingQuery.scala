@@ -32,62 +32,52 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
                           overrideStartPartition: Option[String] = None,
                           skipFirstHole: Boolean = true,
                           forceOverwrite: Boolean = false): Unit = {
-    if (Option(stagingQueryConf.getEngineType).getOrElse(EngineType.SPARK) != EngineType.SPARK) {
-      throw new UnsupportedOperationException(
-        s"Engine type ${stagingQueryConf.getEngineType} is not supported for Staging Query")
-    }
     logger.info("Running setups for StagingQuery")
     Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
-    // the input table is not partitioned, usually for data testing or for kaggle demos
-    if (stagingQueryConf.startPartition == null) {
-      tableUtils.sql(stagingQueryConf.query).save(outputTable, partitionColumns = List.empty)
-    } else {
-      val overrideStart = overrideStartPartition.getOrElse(stagingQueryConf.startPartition)
-      val rangeToRun =
-        if (forceOverwrite) Seq(PartitionRange(overrideStart, endPartition)(tableUtils.partitionSpec))
-        else {
-          val unfilledRanges =
-            tableUtils.unfilledRanges(outputTable,
-                                      PartitionRange(overrideStart, endPartition)(tableUtils.partitionSpec),
-                                      skipFirstHole = skipFirstHole)
+    val overrideStart = overrideStartPartition.getOrElse(stagingQueryConf.startPartition)
+    val rangeToRun =
+      if (forceOverwrite) Seq(PartitionRange(overrideStart, endPartition)(tableUtils.partitionSpec))
+      else {
+        val unfilledRanges =
+          tableUtils.unfilledRanges(outputTable,
+                                    PartitionRange(overrideStart, endPartition)(tableUtils.partitionSpec),
+                                    skipFirstHole = skipFirstHole)
 
-          if (unfilledRanges.isEmpty) {
-            logger.info(s"""No unfilled range for $outputTable given
-                           |start partition of ${stagingQueryConf.startPartition}
-                           |override start partition of $overrideStart
-                           |end partition of $endPartition
-                           |""".stripMargin)
-            return
-          }
-          unfilledRanges.getOrElse(Seq.empty)
+        if (unfilledRanges.isEmpty) {
+          logger.info(s"""No unfilled range for $outputTable given
+                         |start partition of ${stagingQueryConf.startPartition}
+                         |override start partition of $overrideStart
+                         |end partition of $endPartition
+                         |""".stripMargin)
+          return
         }
-      logger.info(s"--forceOverwrite set to: ${forceOverwrite}. Proceeding Staging Query run with range: ${rangeToRun}")
-      val exceptions = mutable.Buffer.empty[String]
-      rangeToRun.foreach { stagingQueryUnfilledRange =>
-        try {
-          val stepRanges = stepDays.map(stagingQueryUnfilledRange.steps).getOrElse(Seq(stagingQueryUnfilledRange))
-          logger.info(s"Staging query ranges to compute: ${stepRanges.map { _.toString }.pretty}")
-          stepRanges.zipWithIndex.foreach { case (range, index) =>
-            val progress = s"| [${index + 1}/${stepRanges.size}]"
-            logger.info(s"Computing staging query for range: $range  $progress")
-            compute(range, Seq.empty[String], enableAutoExpand)
-          }
-          logger.info(s"Finished writing Staging Query data to $outputTable")
-        } catch {
-          case err: Throwable =>
-            exceptions.append(
-              s"Error handling range $stagingQueryUnfilledRange : ${err.getMessage}\n${err.traceString}")
+        unfilledRanges.getOrElse(Seq.empty)
+      }
+    logger.info(s"--forceOverwrite set to: ${forceOverwrite}. Proceeding Staging Query run with range: ${rangeToRun}")
+    val exceptions = mutable.Buffer.empty[String]
+    rangeToRun.foreach { stagingQueryUnfilledRange =>
+      try {
+        val stepRanges = stepDays.map(stagingQueryUnfilledRange.steps).getOrElse(Seq(stagingQueryUnfilledRange))
+        logger.info(s"Staging query ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+        stepRanges.zipWithIndex.foreach { case (range, index) =>
+          val progress = s"| [${index + 1}/${stepRanges.size}]"
+          logger.info(s"Computing staging query for range: $range  $progress")
+          compute(range, Seq.empty[String], enableAutoExpand)
         }
+        logger.info(s"Finished writing Staging Query data to $outputTable")
+      } catch {
+        case err: Throwable =>
+          exceptions.append(s"Error handling range $stagingQueryUnfilledRange : ${err.getMessage}\n${err.traceString}")
       }
-      if (exceptions.nonEmpty) {
-        val length = exceptions.length
-        val fullMessage = exceptions.zipWithIndex
-          .map { case (message, index) =>
-            s"[${index + 1}/$length exceptions]\n$message"
-          }
-          .mkString("\n")
-        throw new Exception(fullMessage)
-      }
+    }
+    if (exceptions.nonEmpty) {
+      val length = exceptions.length
+      val fullMessage = exceptions.zipWithIndex
+        .map { case (message, index) =>
+          s"[${index + 1}/$length exceptions]\n$message"
+        }
+        .mkString("\n")
+      throw new Exception(fullMessage)
     }
   }
 
@@ -161,10 +151,14 @@ object StagingQuery {
 
   def from(stagingQueryConf: api.StagingQuery, endDate: String, tableUtils: TableUtils): StagingQuery = {
     scala.Option(stagingQueryConf.engineType) match {
-      case Some(EngineType.BIGQUERY) =>
+      case Some(EngineType.BIGQUERY) => {
+        logger.info("Using BigQuery staging query")
         createBigQueryImport(stagingQueryConf, endDate, tableUtils)
-      case Some(EngineType.SPARK) =>
+      }
+      case Some(EngineType.SPARK) => {
+        logger.info("Using Spark staging query")
         new StagingQuery(stagingQueryConf, endDate, tableUtils)
+      }
       case None => new StagingQuery(stagingQueryConf, endDate, tableUtils) // default to spark
     }
   }
