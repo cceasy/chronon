@@ -73,9 +73,9 @@ class GcpApiImpl(conf: Map[String, String]) extends Api(conf) {
       val getFutures = kvStore.multiGet(
         // create 100 requests to simulate load
         (1 to 100)
-          .map(_ =>
+          .map(i =>
             GetRequest(
-              keyBytes = s"${testKey}_i".getBytes,
+              keyBytes = s"${testKey}_$i".getBytes,
               dataset = MetadataDataset
             ))
           .toSeq
@@ -84,7 +84,7 @@ class GcpApiImpl(conf: Map[String, String]) extends Api(conf) {
         (1 to 100)
           .map(i =>
             KVStore.PutRequest(
-              keyBytes = s"${testKey}_i".getBytes,
+              keyBytes = s"${testKey}_$i".getBytes,
               valueBytes = s"warmup_value_$i".getBytes,
               dataset = MetadataDataset
             ))
