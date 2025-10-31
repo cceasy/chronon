@@ -1,4 +1,42 @@
-## useful scala commands
+## Commands
+
+***All commands assume you are in the root directory of this project***.
+For me, that looks like `~/workspace/chronon`.
+
+## Prerequisites
+1. Install Thrift (e.g. via `brew install thrift` on macOS. Version 0.22 is recommended)
+2. Install Java. Ideally version 11, e.g. via `brew install openjdk@11` on macOS - newer versions of Java can run into issues due to stricter Java platform module system checks particularly with engines like Spark / Flink)
+3. Install Scala 2.12
+4. Install Python 3.11 or higher
+
+## Using a Plugin Manager
+You can use a plugin manager like [asdf](https://asdf-vm.com/guide/getting-started.html#_2-download-asdf)
+* Install [asdf](https://asdf-vm.com/guide/getting-started.html#_2-download-asdf)
+* ```asdf plugin add asdf-plugin-manager```
+* ```asdf install asdf-plugin-manager latest```
+* ```asdf exec asdf-plugin-manager add-all``` (see `.plugin-versions` for required plugins)
+* ```asdf exec asdf-plugin-manager update-all```
+* ```asdf install``` (see `.tool-versions` for required runtimes and versions)
+
+## Build system
+We use [mill](https://mill-build.org/mill/index.html) for building Scala and Python code.
+
+### Why mill?
+mill has a couple of nice side effects:
+1. Builds are very fast - they are cached and executed in parallel
+2. Good Python support - comes with
+   a. ruff linting
+   b. pytest support
+   c. wheel
+   d. pex bundling
+   e. pypi uploads for free  (literally 20 lines of code to get all our py workflow into mill)
+3. Easy to reason about dependencies and modules
+   a. mill is a significant reduction in code size and indirection
+   b. the ide click-into and auto complete works even with build files
+4. Much smaller build output sizes (e.g output size for spark dropped from 480MB to 62MB)
+   a. simply because we can mark spark deps as “provided” that only are available for compilation but not for assembly or runtime.
+
+### Useful scala commands
 ```
 # reformat scala code
 ./mill __.reformat
@@ -25,7 +63,7 @@
 ./mill resolve spark.__
 ```
 
-## useful python commands
+### useful python commands
 ```
 # reformat python code
 ./mill python.ruffCheck --fix
@@ -60,7 +98,7 @@ export MILL_TWINE_PASSWORD=<apitoken>
 ./mill python.bundle
 ```
 
-## project setup
+### project setup
 
 Mill build spans across a central build.mill and a per module package.mill file.
 
@@ -90,26 +128,45 @@ object `package` extends build.BaseModule {
 }
 ```
 
-## why mill?
+## Configuring IntelliJ IDEA
+* Install the Build Server Protocol (BSP) plugin
+* From the menu, select File -> New -> Project from Existing Sources...
+* Select the root directory of the project
+* Select "Import project from external model" and choose "BSP"
 
-mill has a couple of nice side effects:
-1. builds are very fast - apparently it changes the assembled jar surgically
-  
-   a. they are cached and executed in parallel
-2. python support - comes with 
+## Pushing code
 
-   a. ruff linting 
-   b. pytest support 
-   c. wheel 
-   d. pex bundling 
-   e. pypi uploads for free  (literally 20 lines of code to get all our py workflow into mill)
+Our CI pipeline runs scalafmt checks on scala code before allowing merges.
+You can either add a git pre-commit hook to run scalafmt before every commit, or use the following alias and function to format, commit, and push in one command.
 
-3. i can understand what is going on with the builds 
+```sh
+alias mill_scalafmt='./mill __.reformat'
 
-   a. mill is a significant reduction in code size and indirection 
-   b. the ide click-into and auto complete works even with build files
+function zpush() {
+    if [ $# -eq 0 ]; then
+        echo "Error: Please provide a commit message."
+        return 1
+    fi
 
-4. the build output size for spark goes from 480MB to 62MB 
+    local commit_message="$1"
 
-    a. simply because we can mark spark deps as “provided” that only are available for compilation but not for assembly or runtime.
+    mill_scalafmt && \
+    git add -u && \
+    git commit -m "$commit_message" && \
+    git push
 
+    if [ $? -eq 0 ]; then
+        echo "Successfully compiled, formatted, committed, and pushed changes."
+    else
+        echo "An error occurred during the process."
+    fi
+}
+```
+
+You can invoke this command as below
+
+```
+zpush "Your commit message"
+```
+
+> Note: The quotes are necessary for multi-word commit message.
