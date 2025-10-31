@@ -68,7 +68,72 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
     val retryCount = if (conf.isSetRetryCount) conf.retryCount else 3L
     val retryIntervalMin = if (conf.isSetRetryIntervalMin) conf.retryIntervalMin else 3L
 
-    val spec = conf.sourceTableDependency.tableInfo.partitionSpec(tableUtils.partitionSpec)
+    val tableInfo = conf.sourceTableDependency.tableInfo
+    val hasPartitionColumn = Option(tableInfo.partitionColumn).isDefined
+    val hasTriggerExpr = Option(tableInfo.triggerExpr).isDefined
+
+    // Case 1: No partitions or trigger expression defined -> return success
+    if (!hasPartitionColumn && !hasTriggerExpr) {
+      logger.info(
+        s"Input table ${tableName} has no partitions or trigger expression defined. Checking table existence.")
+      if (tableUtils.tableReachable(tableName)) return Success(())
+      else return Failure(new RuntimeException(s"Table ${tableName} was not found."))
+    }
+
+    // Case 2: No partitions but trigger expression is defined
+    if (!hasPartitionColumn && hasTriggerExpr) {
+      val triggerExpr = tableInfo.triggerExpr
+      @tailrec
+      def retryTriggerExpr(attempt: Long): Try[Unit] = {
+        Try {
+          val sql = s"SELECT ${triggerExpr} FROM ${tableName}"
+          logger.info(s"Executing trigger expression query: ${sql} on engine: ${conf.engineType.name()}")
+          val result = conf.engineType match {
+            case EngineType.SPARK => tableUtils.sql(sql)
+            // TODO: Implement EngineType.BIG_QUERY (Possibly through tableUtils)
+            case _ => throw new RuntimeException("Not implemented.")
+          }
+          val triggerValue = result
+            .collect()
+            .headOption
+            .getOrElse(throw new RuntimeException(s"Trigger expression query returned no results"))
+            .get(0)
+
+          // Compare trigger value against partitionRange.max (end partition)
+          val maxPartition = range.end
+
+          // Convert both to comparable format - assuming the trigger expression returns a comparable value
+          val triggerValueStr = triggerValue.toString
+          logger.info(s"Trigger value: ${triggerValueStr}, Max partition: ${maxPartition}")
+
+          if (triggerValueStr > maxPartition) {
+            logger.info(
+              s"Trigger expression ${triggerExpr} value ${triggerValueStr} > ${maxPartition}. Sensor succeeded.")
+            ()
+          } else {
+            throw new RuntimeException(
+              s"Trigger expression ${triggerExpr} value ${triggerValueStr} is not greater than ${maxPartition}")
+          }
+        } match {
+          case Success(_) => Success(())
+          case Failure(e) if attempt < retryCount =>
+            logger.warn(
+              s"Attempt ${attempt + 1} failed: Trigger expression check failed with error: ${e.getMessage}. " +
+                s"Retrying in ${retryIntervalMin} minutes")
+            Thread.sleep(retryIntervalMin * 60 * 1000)
+            retryTriggerExpr(attempt + 1)
+          case Failure(e) =>
+            Failure(
+              new RuntimeException(s"Sensor timed out after ${retryIntervalMin * attempt} minutes. " +
+                                     s"Trigger expression check failed: ${e.getMessage}",
+                                   e))
+        }
+      }
+      return retryTriggerExpr(0)
+    }
+
+    // Case 3: Use existing partition check logic
+    val spec = tableInfo.partitionSpec(tableUtils.partitionSpec)
 
     @tailrec
     def retry(attempt: Long): Try[Unit] = {

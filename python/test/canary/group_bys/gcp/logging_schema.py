@@ -6,7 +6,7 @@ This implementation assumes a pubsub bigQuery subscription to create the loggabl
 The fields are stored as bytes and such the schema can be decoded by casting to string.
 """
 from ai.chronon.group_by import GroupBy, Aggregation, Operation, Accuracy
-from ai.chronon.source import EventSource  
+from ai.chronon.source import EventSource
 from ai.chronon.query import Query, selects
 import staging_queries.gcp.partitioned_logging as partitioned_logging
 

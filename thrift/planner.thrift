@@ -69,6 +69,8 @@ struct ExternalSourceSensorNode {
     2: optional common.TableDependency sourceTableDependency
     3: optional i64 retryCount
     4: optional i64 retryIntervalMin
+    // When running TriggerExpr we need to use the proper engine.
+    5: optional api.EngineType engineType
 }
 union NodeContent {
     // join nodes

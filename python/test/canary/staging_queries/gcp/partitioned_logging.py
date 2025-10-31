@@ -3,10 +3,10 @@ Staging query to partition the loggable_response BigQuery table which is append 
 We need some specific columns for the logFlattener job such as key_base64 and value_base64
 We keep the Binary columns as well as it's simpler casting to UTF-8 in bigQuery.
 """
-from ai.chronon.staging_query import StagingQuery
-
+from ai.chronon.staging_query import StagingQuery, TableDependency
 
 v0 = StagingQuery(
+    dependencies=[TableDependency(table="data.loggable_response")],
     query="""
       SELECT
         DATE(TIMESTAMP_MILLIS(tsMillis)) AS ds

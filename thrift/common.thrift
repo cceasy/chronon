@@ -81,6 +81,18 @@ struct TableInfo {
     * is sufficient. What this means is that latest available partition prior to end cut off will be used.
     **/
     200: optional bool isCumulative
+
+    /**
+    * Some append only, unpartitioned tables (bigtable subscriptions, delta tables) may require special handling for
+    * when to trigger the downstream nodes. For this case we add a trigger expression that is going to be compared
+    * against the end of the partition range to compute.
+    * For example. If there's a timestamp in defined.
+    * triggerExpr = DATE(MAX(ts)) generates a sensor that triggers when
+    * SELECT DATE(MAX(ts)) > DATE '{{ ds }}' FROM table
+    * returns true.
+    * This only takes effect for the external tables -> Chronon tables entrypoint. All chronon tables are partitioned.
+    **/
+    300: optional string triggerExpr
 }
 
 struct TableDependency {
