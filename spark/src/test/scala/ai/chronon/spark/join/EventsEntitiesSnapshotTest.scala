@@ -23,6 +23,7 @@ import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
+import ai.chronon.spark.batch.ModularMonolith
 import ai.chronon.spark.utils.DataFrameGen
 import org.junit.Assert._
 
@@ -116,11 +117,14 @@ class EventsEntitiesSnapshotTest extends BaseJoinTest {
         Seq(Builders.JoinPart(groupBy = groupBy, keyMapping = Map("user_name" -> "user", "user" -> "user_name"))),
       metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "chronon")
     )
-    val runner1 = new ai.chronon.spark.Join(joinConf = joinConf,
-                                            endPartition =
-                                              tableUtils.partitionSpec.minus(today, new Window(40, TimeUnit.DAYS)),
-                                            tableUtils = tableUtils)
-    runner1.computeJoin()
+
+    // Run the ModularMonolith pipeline for the first time
+    val firstEndPartition = tableUtils.partitionSpec.minus(today, new Window(40, TimeUnit.DAYS))
+    val dateRange1 = new DateRange()
+      .setStartDate(start)
+      .setEndDate(firstEndPartition)
+    ModularMonolith.run(joinConf, dateRange1)(tableUtils)
+
     val dropStart = tableUtils.partitionSpec.minus(today, new Window(55, TimeUnit.DAYS))
     val dropEnd = tableUtils.partitionSpec.minus(today, new Window(45, TimeUnit.DAYS))
 
@@ -134,8 +138,15 @@ class EventsEntitiesSnapshotTest extends BaseJoinTest {
     }
 
     resetUDFs()
-    val runner2 = new ai.chronon.spark.Join(joinConf = joinConf, endPartition = end, tableUtils = tableUtils)
-    val computed = runner2.computeJoin(Some(3))
+
+    // Run the ModularMonolith pipeline for the second time
+    val dateRange2 = new DateRange()
+      .setStartDate(start)
+      .setEndDate(end)
+    ModularMonolith.run(joinConf, dateRange2)(tableUtils)
+
+    // Read the computed output from the output table
+    val computed = tableUtils.sql(s"SELECT * FROM ${joinConf.metaData.outputTable}")
     println(s"join start = $start")
 
     val expectedQuery = s"""
@@ -209,10 +220,16 @@ class EventsEntitiesSnapshotTest extends BaseJoinTest {
     println(tableUtils.partitions(s"$namespace.test_user_transaction_features"))
 
     resetUDFs()
-    val runner3 = new ai.chronon.spark.Join(joinConf = joinConf, endPartition = end, tableUtils = tableUtils)
+
+    // Run the ModularMonolith pipeline for the third time
+    val dateRange3 = new DateRange()
+      .setStartDate(start)
+      .setEndDate(end)
+    ModularMonolith.run(joinConf, dateRange3)(tableUtils)
 
     val expected2 = spark.sql(expectedQuery)
-    val computed2 = runner3.computeJoin(Some(3))
+    // Read the computed output from the output table
+    val computed2 = tableUtils.sql(s"SELECT * FROM ${joinConf.metaData.outputTable}")
     val diff2 = Comparison.sideBySide(computed2, expected2, List("user_name", "user", "ts", "ds"))
 
     if (diff2.count() > 0) {

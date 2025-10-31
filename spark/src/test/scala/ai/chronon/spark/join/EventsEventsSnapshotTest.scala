@@ -18,9 +18,11 @@ package ai.chronon.spark.join
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
+import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.spark._
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.batch.ModularMonolith
 import ai.chronon.spark.utils.DataFrameGen
 import org.junit.Assert._
 
@@ -66,9 +68,14 @@ class EventsEventsSnapshotTest extends BaseJoinTest {
       metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "chronon")
     )
 
-    (new Analyzer(tableUtils, joinConf, monthAgo, today)).run()
-    val join = new ai.chronon.spark.Join(joinConf = joinConf, endPartition = monthAgo, tableUtils = tableUtils)
-    val computed = join.computeJoin()
+    // Run the ModularMonolith pipeline
+    val dateRange = new DateRange()
+      .setStartDate(start)
+      .setEndDate(monthAgo)
+    ModularMonolith.run(joinConf, dateRange)(tableUtils)
+
+    // Read the computed output from the output table
+    val computed = tableUtils.sql(s"SELECT * FROM ${joinConf.metaData.outputTable}")
     computed.show()
 
     val expected = tableUtils.sql(s"""

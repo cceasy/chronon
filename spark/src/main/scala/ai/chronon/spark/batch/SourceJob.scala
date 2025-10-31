@@ -6,6 +6,7 @@ import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.planner.SourceWithFilterNode
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.{Map, Seq}
 import scala.jdk.CollectionConverters._
@@ -15,6 +16,7 @@ Runs and materializes a `Source` for a given `dateRange`. Used in the Join compu
 then each join may have a further Bootstrap computation to produce the left side for use in the final join step.
  */
 class SourceJob(node: SourceWithFilterNode, metaData: MetaData, range: DateRange)(implicit tableUtils: TableUtils) {
+  @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
   private val sourceWithFilter = node
   private val dateRange = range.toPartitionRange(tableUtils.partitionSpec)
   private val outputTable = metaData.outputTable
@@ -53,17 +55,17 @@ class SourceJob(node: SourceWithFilterNode, metaData: MetaData, range: DateRange
                                  range = Some(dayStep))
 
       if (df.isEmpty) {
-        throw new RuntimeException(s"Query produced 0 rows in range $dayStep.")
-      }
-
-      val dfWithTimeCol = if (source.dataModel == EVENTS) {
-        df.withTimeBasedColumn(Constants.TimePartitionColumn)
+        logger.warn(s"Query produced 0 rows in range $dayStep. Skipping this partition.")
       } else {
-        df
-      }
+        val dfWithTimeCol = if (source.dataModel == EVENTS) {
+          df.withTimeBasedColumn(Constants.TimePartitionColumn)
+        } else {
+          df
+        }
 
-      // Save using the provided outputTable or compute one if not provided
-      dfWithTimeCol.save(outputTable, tableProperties = metaData.tableProps)
+        // Save using the provided outputTable or compute one if not provided
+        dfWithTimeCol.save(outputTable, tableProperties = metaData.tableProps)
+      }
     }
   }
 

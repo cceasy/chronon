@@ -105,6 +105,13 @@ case class PartitionRange(start: String, end: String)(implicit val partitionSpec
     }
   }
 
+  def toDateRange: DateRange = {
+    val dailyRange = translate(PartitionSpec.daily)
+    new DateRange()
+      .setStartDate(dailyRange.start)
+      .setEndDate(dailyRange.end)
+  }
+
   def shiftMillis(millis: Long): PartitionRange = {
     if (millis == 0) {
       this

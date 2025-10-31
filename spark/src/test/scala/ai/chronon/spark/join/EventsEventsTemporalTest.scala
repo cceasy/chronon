@@ -18,9 +18,11 @@ package ai.chronon.spark.join
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.{Builders, Operation, TimeUnit, Window}
+import ai.chronon.api.Extensions._
+import ai.chronon.api.{Builders, DateRange, Operation, TimeUnit, Window}
 import ai.chronon.spark._
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.batch.ModularMonolith
 import ai.chronon.spark.utils.DataFrameGen
 import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.SparkSession
@@ -72,9 +74,15 @@ class EventsEventsTemporalTest extends BaseJoinTest {
     itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) // .union(itemQueriesDf)
 
     val start = tableUtilsSkewFree.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
-    (new Analyzer(tableUtilsSkewFree, joinConf, monthAgo, today)).run()
-    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtilsSkewFree)
-    val computed = join.computeJoin(Some(100))
+
+    // Run the ModularMonolith pipeline
+    val dateRange = new DateRange()
+      .setStartDate(start)
+      .setEndDate(dayAndMonthBefore)
+    ModularMonolith.run(joinConf, dateRange)(tableUtilsSkewFree)
+
+    // Read the computed output from the output table
+    val computed = tableUtilsSkewFree.sql(s"SELECT * FROM ${joinConf.metaData.outputTable}")
     computed.show()
 
     val expected = tableUtilsSkewFree.sql(s"""

@@ -45,7 +45,9 @@ object RelevantLeftForJoinPart {
                                   rightMetadata.name.sanitize
                                 })
 
-    val combinedHash = HashUtils.md5Hex(relevantLeft.render + joinPart.groupBy.semanticHash).toLowerCase
+    // TODO: add things here if we are updating the joining strategy and we need to compute tables differently
+    val version = ""
+    val combinedHash = HashUtils.md5Hex(relevantLeft.render + joinPart.groupBy.semanticHash + version).toLowerCase
 
     // removing ns to keep the table name short, hash is enough to differentiate
     val leftTable = removeNamespace(relevantLeft.leftTable)

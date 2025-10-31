@@ -185,6 +185,13 @@ object Extensions {
 
     def bootstrapTable: String = s"${outputTable}_bootstrap"
 
+    def stepSize: Int = {
+      Option(metaData.executionInfo)
+        .filter(_.isSetStepDays)
+        .map(_.stepDays)
+        .getOrElse(14)
+    }
+
     private def comparisonPrefix = "comparison"
 
     def comparisonConfName: String = s"${metaData.getName}_$comparisonPrefix"

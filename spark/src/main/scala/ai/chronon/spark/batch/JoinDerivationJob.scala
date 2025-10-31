@@ -1,4 +1,4 @@
-package ai.chronon.spark
+package ai.chronon.spark.batch
 
 import ai.chronon.api.Extensions._
 import ai.chronon.api.ScalaJavaConversions.ListOps
@@ -6,6 +6,7 @@ import ai.chronon.api.{DateRange, MetaData}
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.planner.JoinDerivationNode
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.JoinUtils
 import org.apache.spark.sql.functions.{coalesce, col, expr}
 
 /*
