@@ -146,6 +146,7 @@ object SparkSessionBuilder {
       // Otherwise files left from deleting the table with the same name result in test failures
       baseBuilder.config("spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation", "true")
     }
+    mergedConfigs.foreach { config => baseBuilder = baseBuilder.config(config._1, config._2) }
 
     val builder = if (local) {
       logger.info(s"Building local spark session with warehouse at $warehouseDir")
@@ -164,7 +165,6 @@ object SparkSessionBuilder {
       // hive jars need to be available on classpath - no needed for local testing
       baseBuilder
     }
-    mergedConfigs.foreach { config => baseBuilder = baseBuilder.config(config._1, config._2) }
     val spark = builder.getOrCreate()
     // disable log spam
     spark.sparkContext.setLogLevel("ERROR")
