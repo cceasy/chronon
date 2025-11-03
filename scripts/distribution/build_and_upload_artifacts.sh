@@ -9,6 +9,7 @@ function print_usage() {
     echo "  --customer_ids <customer_id>  Specify customer IDs to upload artifacts to."
     echo "  -h, --help  Show this help message"
     echo "  --skip-checks  Skip git checks (not recommended)"
+    echo "  --skip-wheel   Skip building and uploading the wheel"
 }
 
 # No arguments provided
@@ -20,6 +21,7 @@ fi
 BUILD_AWS=false
 BUILD_GCP=false
 SKIP_GIT_CHECKS=false
+SKIP_WHEEL=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -51,6 +53,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --skip-checks)
             SKIP_GIT_CHECKS=true
+            shift
+            ;;
+        --skip-wheel)
+            SKIP_WHEEL=true
             shift
             ;;
         *)
@@ -88,32 +94,37 @@ CHRONON_ROOT_DIR=$(dirname "$(dirname "$SCRIPT_DIRECTORY")")
 echo "Working in $CHRONON_ROOT_DIR"
 cd $CHRONON_ROOT_DIR
 
-echo "Building wheel"
-#Check python version >= 3.9
-MAJOR_PYTHON_VERSION=$(python3 --version | cut -d " " -f2 | cut -d "." -f 1)
-MINOR_PYTHON_VERSION=$(python3 --version | cut -d " " -f2 | cut -d "." -f 2)
+if [ "$SKIP_WHEEL" = false ]; then
+    echo "Building wheel"
+    #Check python version >= 3.9
+    MAJOR_PYTHON_VERSION=$(python3 --version | cut -d " " -f2 | cut -d "." -f 1)
+    MINOR_PYTHON_VERSION=$(python3 --version | cut -d " " -f2 | cut -d "." -f 2)
 
-EXPECTED_MINIMUM_MAJOR_PYTHON_VERSION=3
-EXPECTED_MINIMUM_MINOR_PYTHON_VERSION=9
+    EXPECTED_MINIMUM_MAJOR_PYTHON_VERSION=3
+    EXPECTED_MINIMUM_MINOR_PYTHON_VERSION=9
 
-if [[ $EXPECTED_MINIMUM_MAJOR_PYTHON_VERSION -gt $MAJOR_PYTHON_VERSION ]] ; then
-    echo "Failed major version of $MAJOR_PYTHON_VERSION. Expecting python version of at least $EXPECTED_MINIMUM_MAJOR_PYTHON_VERSION.$EXPECTED_MINIMUM_MINOR_PYTHON_VERSION to build wheel. Your version is $(python --version)"
-    exit 1
-fi
+    if [[ $EXPECTED_MINIMUM_MAJOR_PYTHON_VERSION -gt $MAJOR_PYTHON_VERSION ]] ; then
+        echo "Failed major version of $MAJOR_PYTHON_VERSION. Expecting python version of at least $EXPECTED_MINIMUM_MAJOR_PYTHON_VERSION.$EXPECTED_MINIMUM_MINOR_PYTHON_VERSION to build wheel. Your version is $(python --version)"
+        exit 1
+    fi
 
-if [[ $EXPECTED_MINIMUM_MINOR_PYTHON_VERSION -gt $MINOR_PYTHON_VERSION ]] ; then
-    echo "Failed minor version of $MINOR_PYTHON_VERSION. Expecting python version of at least $EXPECTED_MINIMUM_MAJOR_PYTHON_VERSION.$EXPECTED_MINIMUM_MINOR_PYTHON_VERSION to build wheel. Your version is $(python --version)"
-    exit 1
-fi
+    if [[ $EXPECTED_MINIMUM_MINOR_PYTHON_VERSION -gt $MINOR_PYTHON_VERSION ]] ; then
+        echo "Failed minor version of $MINOR_PYTHON_VERSION. Expecting python version of at least $EXPECTED_MINIMUM_MAJOR_PYTHON_VERSION.$EXPECTED_MINIMUM_MINOR_PYTHON_VERSION to build wheel. Your version is $(python --version)"
+        exit 1
+    fi
 
-./mill clean
-export ZIPLINE_VERSION="0.1.0+dev.$USER"
-./mill python.wheel # we need ZIPLINE_VERSION set to build the wheel with specific version here
+    ./mill clean
+    export ZIPLINE_VERSION="0.1.0+dev.$USER"
+    ./mill python.wheel # we need ZIPLINE_VERSION set to build the wheel with specific version here
 
-EXPECTED_ZIPLINE_WHEEL="./out/python/wheel.dest//dist/zipline_ai-$ZIPLINE_VERSION-py3-none-any.whl"
-if [ ! -f "$EXPECTED_ZIPLINE_WHEEL" ]; then
-    echo "$EXPECTED_ZIPLINE_WHEEL not found"
-    exit 1
+    EXPECTED_ZIPLINE_WHEEL="./out/python/wheel.dest//dist/zipline_ai-$ZIPLINE_VERSION-py3-none-any.whl"
+    if [ ! -f "$EXPECTED_ZIPLINE_WHEEL" ]; then
+        echo "$EXPECTED_ZIPLINE_WHEEL not found"
+        exit 1
+    fi
+else
+    echo "Skipping wheel build"
+    export ZIPLINE_VERSION="0.1.0+dev.$USER"
 fi
 
 
@@ -189,7 +200,9 @@ function upload_to_gcp() {
                 NEW_ELEMENT_WHEEL_PATH=gs://zipline-artifacts-$element/release/$ZIPLINE_VERSION/wheels/
                 gcloud storage cp "$SRC_CLOUD_GCP_JAR" "$NEW_ELEMENT_JAR_PATH/$CLOUD_GCP_JAR" --custom-metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
                 gcloud storage cp "$SRC_SERVICE_JAR" "$NEW_ELEMENT_JAR_PATH/$SERVICE_JAR" --custom-metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-                gcloud storage cp "$EXPECTED_ZIPLINE_WHEEL" "$NEW_ELEMENT_WHEEL_PATH" --custom-metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+                if [ "$SKIP_WHEEL" = false ]; then
+                  gcloud storage cp "$EXPECTED_ZIPLINE_WHEEL" "$NEW_ELEMENT_WHEEL_PATH" --custom-metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+                fi
                 gcloud storage cp "$SRC_FLINK_JAR" "$NEW_ELEMENT_JAR_PATH/$FLINK_JAR" --custom-metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
                 gcloud storage cp "$SRC_FLINK_PUBSUB_JAR" "$NEW_ELEMENT_JAR_PATH/$FLINK_PUBSUB_JAR" --custom-metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
               done
@@ -217,7 +230,9 @@ function upload_to_aws() {
                 NEW_ELEMENT_WHEEL_PATH=s3://zipline-artifacts-$element/release/$ZIPLINE_VERSION/wheels/
                 aws s3 cp "$SRC_CLOUD_AWS_JAR" "$NEW_ELEMENT_JAR_PATH/$CLOUD_AWS_JAR" --metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
                 aws s3 cp "$SRC_SERVICE_JAR" "$NEW_ELEMENT_JAR_PATH/$SERVICE_JAR" --metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-                aws s3 cp "$EXPECTED_ZIPLINE_WHEEL" "$NEW_ELEMENT_WHEEL_PATH" --metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+                if [ "$SKIP_WHEEL" = false ]; then
+                  aws s3 cp "$EXPECTED_ZIPLINE_WHEEL" "$NEW_ELEMENT_WHEEL_PATH" --metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+                fi
                 aws s3 cp "$SRC_FLINK_JAR" "$NEW_ELEMENT_JAR_PATH/$FLINK_JAR" --metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
               done
               echo "Succeeded"
