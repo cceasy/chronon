@@ -85,6 +85,7 @@ object OtelMetricsReporter {
   val MetricsExporterUrlKey = "ai.chronon.metrics.exporter.url"
   val MetricsExporterPrometheusPortKey = "ai.chronon.metrics.exporter.port"
   val MetricsExporterResourceKey = "ai.chronon.metrics.exporter.resources"
+  val MetricsExporterIntervalKey = "ai.chronon.metrics.exporter.interval"
 
   val MetricsReaderGrpc = "grpc"
   val MetricsReaderHttp = "http"
@@ -101,6 +102,10 @@ object OtelMetricsReporter {
     System.getProperty(MetricsReader, MetricsReaderHttp)
   }
 
+  def getMetricsExporterInterval: String = {
+    System.getProperty(MetricsExporterIntervalKey, MetricsExporterInterval)
+  }
+
   def buildOtelMetricReader(): MetricReader = {
     val metricReader = getMetricsReader
     metricReader.toLowerCase match {
@@ -108,11 +113,11 @@ object OtelMetricsReporter {
         val exporterUrl = getExporterUrl + "/v1/metrics"
         val metricExporter = OtlpHttpMetricExporter.builder.setEndpoint(exporterUrl).build
         // Configure periodic metric reader// Configure periodic metric reader
-        PeriodicMetricReader.builder(metricExporter).setInterval(Duration.parse(MetricsExporterInterval)).build
+        PeriodicMetricReader.builder(metricExporter).setInterval(Duration.parse(getMetricsExporterInterval)).build
 
       case MetricsReaderGrpc =>
         val metricExporter = OtlpGrpcMetricExporter.builder().setEndpoint(getExporterUrl).build
-        PeriodicMetricReader.builder(metricExporter).setInterval(Duration.parse(MetricsExporterInterval)).build
+        PeriodicMetricReader.builder(metricExporter).setInterval(Duration.parse(getMetricsExporterInterval)).build
 
       case MetricsReaderPrometheus =>
         val prometheusPort =

@@ -28,16 +28,20 @@ if [ -n "$CHRONON_METRICS_READER" ]; then
   METRICS_OPTS="-Dai.chronon.metrics.enabled=true"
   METRICS_OPTS="$METRICS_OPTS -Dai.chronon.metrics.reader=$CHRONON_METRICS_READER"
 
-  if [ "$CHRONON_METRICS_READER" = "http" ]; then
-    if [ -n "$EXPORTER_OTLP_ENDPOINT" ]; then
-      METRICS_OPTS="$METRICS_OPTS -Dai.chronon.metrics.exporter.url=$EXPORTER_OTLP_ENDPOINT"
-    fi
-  elif [ "$CHRONON_METRICS_READER" = "prometheus" ]; then
+  if [ "$CHRONON_METRICS_READER" = "prometheus" ]; then
     if [ -n "$CHRONON_PROMETHEUS_SERVER_PORT" ]; then
       METRICS_OPTS="$METRICS_OPTS -Dai.chronon.metrics.exporter.port=$CHRONON_PROMETHEUS_SERVER_PORT"
     fi
     if [ -n "$VERTX_PROMETHEUS_SERVER_PORT" ]; then
       METRICS_OPTS="$METRICS_OPTS -Dai.chronon.vertx.metrics.exporter.port=$VERTX_PROMETHEUS_SERVER_PORT"
+    fi
+  else
+    # For http and grpc metrics readers
+    if [ -n "$EXPORTER_OTLP_ENDPOINT" ]; then
+      METRICS_OPTS="$METRICS_OPTS -Dai.chronon.metrics.exporter.url=$EXPORTER_OTLP_ENDPOINT"
+    fi
+    if [ -n "$CHRONON_METRICS_EXPORTER_INTERVAL" ]; then
+      METRICS_OPTS="$METRICS_OPTS -Dai.chronon.metrics.exporter.interval=$CHRONON_METRICS_EXPORTER_INTERVAL"
     fi
   fi
 else

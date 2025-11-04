@@ -61,7 +61,7 @@ public class ChrononServiceLauncher extends Launcher {
 
     private void configureOtlpHttpMetrics(String serviceName, VertxOptions options) {
         String exporterUrl = OtelMetricsReporter.getExporterUrl() + "/v1/metrics";
-        String exportInterval = OtelMetricsReporter.MetricsExporterInterval();
+        String exportInterval = OtelMetricsReporter.getMetricsExporterInterval();
 
         // Configure OTLP using Micrometer's built-in registry
         OtlpConfig otlpConfig = key -> {
