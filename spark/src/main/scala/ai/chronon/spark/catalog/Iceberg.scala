@@ -10,6 +10,8 @@ case object Iceberg extends Format {
     Map(
       "commit.retry.min-wait-ms" -> "10000",
       "commit.retry.num-retries" -> "10", // default = 4
+      "commit.status-check.num-retries" -> "5", // default = 3
+      "commit.status-check.min-wait-ms" -> (10 * 1000).toString, // default = 1000
       "write.merge.isolation-level" -> "snapshot"
     )
   }
