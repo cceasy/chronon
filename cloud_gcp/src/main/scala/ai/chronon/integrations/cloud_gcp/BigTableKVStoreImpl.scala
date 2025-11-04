@@ -1,10 +1,10 @@
 package ai.chronon.integrations.cloud_gcp
 
-import ai.chronon.api.Constants.{ContinuationKey, ListEntityType, ListLimit}
+import ai.chronon.api.Constants.{ContinuationKey, ListEntityType, ListLimit, MetadataDataset}
 import ai.chronon.api.Extensions.{GroupByOps, StringOps, WindowOps, WindowUtils}
 import ai.chronon.api.{GroupBy, MetaData, PartitionSpec, TilingUtils}
 import ai.chronon.online.KVStore
-import ai.chronon.online.KVStore.{ListRequest, ListResponse, ListValue}
+import ai.chronon.online.KVStore.{GetRequest, ListRequest, ListResponse, ListValue}
 import ai.chronon.online.metrics.Metrics
 import com.google.api.core.ApiFuture
 import com.google.cloud.RetryOption
@@ -22,7 +22,7 @@ import java.nio.charset.Charset
 import scala.collection.concurrent.TrieMap
 import scala.collection.{Seq, mutable}
 import scala.compat.java8.FutureConverters
-import scala.concurrent.Future
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Success}
@@ -358,6 +358,33 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
     Future.sequence(resultFutures)
   }
 
+  private def multiDelete(deleteRequests: Seq[DeleteRequest]): Future[Seq[Boolean]] = {
+    val resultFutures = deleteRequests.map { req =>
+      val tableId = mapDatasetToTable(req.dataset)
+      val datasetMetricsContext = tableToContext.getOrElseUpdate(
+        tableId.toString,
+        metricsContext.copy(dataset = tableId.toString)
+      )
+
+      val rowKey = buildRowKey(req.keyBytes, req.dataset)
+      val mutation = RowMutation.create(tableId, ByteString.copyFrom(rowKey))
+      mutation.deleteRow()
+
+      val mutateApiFuture = dataClient.mutateRowAsync(mutation)
+      val scalaFuture = googleFutureToScalaFuture(mutateApiFuture)
+      scalaFuture
+        .map { _ =>
+          true
+        }
+        .recover { case e: Exception =>
+          logger.error(s"Error deleting data ${new String(req.keyBytes)}", e)
+          datasetMetricsContext.increment("multiDelete.failures", Map("exception" -> e.getClass.getName))
+          false
+        }
+    }
+    Future.sequence(resultFutures)
+  }
+
   override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
     val uploader = conf.getOrElse("UPLOADER", "bigquery")
 
@@ -507,12 +534,60 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
       }
     }
   }
+
+  override def init(props: Map[String, Any]): Unit = {
+    super.init(props)
+
+    val warmupLengthMillis: Long = 5000L
+    // Perform some dummy operations to warm up the client
+    // This can help reduce latency for the first real operations.
+    // Intentionally getting and deleting non-existent keys below to warm up.
+
+    val testKey = "warmup_key"
+    logger.info(s"Warming up KVStore with key prefix $testKey")
+    try {
+      val getFutures = this.multiGet(
+        // create 100 requests to simulate load
+        (1 to 100)
+          .map(i =>
+            GetRequest(
+              keyBytes = s"${testKey}_$i".getBytes,
+              dataset = MetadataDataset
+            ))
+          .toSeq
+      )
+      val deleteFutures = this.multiDelete(
+        (1 to 100)
+          .map(i =>
+            DeleteRequest(
+              keyBytes = s"${testKey}_$i".getBytes,
+              dataset = MetadataDataset
+            ))
+          .toSeq
+      )
+      // Wait for the future to complete with a timeout
+      try {
+        Await.result(getFutures, warmupLengthMillis.milliseconds)
+        Await.result(deleteFutures, warmupLengthMillis.milliseconds)
+      } // swallow exception
+      catch {
+        case _: Exception =>
+      }
+
+      logger.info("KVStore warm-up completed successfully")
+    } catch {
+      case e: Exception =>
+        logger.warn("Warm-up operations failed", e)
+    }
+  }
 }
 
 object BigTableKVStore {
 
   // Default list limit
   val defaultListLimit: Int = 100
+
+  case class DeleteRequest(keyBytes: Array[Byte], dataset: String)
 
   sealed trait TableType
   case object BatchTable extends TableType

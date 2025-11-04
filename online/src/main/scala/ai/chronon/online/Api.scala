@@ -57,6 +57,10 @@ object KVStore {
 trait KVStore {
   @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
   implicit val executionContext: ExecutionContext = metrics.FlexibleExecutionContext.buildExecutionContext
+
+  // can be overridden in specific KV store implementations to cover any init actions / connection warm up etc
+  def init(props: Map[String, Any] = Map.empty): Unit = {}
+
   def create(dataset: String): Unit
 
   def create(dataset: String, props: Map[String, Any]): Unit = create(dataset)

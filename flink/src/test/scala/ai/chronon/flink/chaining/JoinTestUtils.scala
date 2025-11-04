@@ -1,20 +1,20 @@
 package ai.chronon.flink.chaining
 
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Builders, DoubleType, GroupBy, Join, Operation, StringType, StructField, StructType, TimeUnit, Window}
+import ai.chronon.api._
 import ai.chronon.flink.SparkExpressionEvalFn
 import ai.chronon.flink.deser.ProjectedEvent
 import ai.chronon.flink.source.FlinkSource
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
-import ai.chronon.online.{Api, ExternalSourceRegistry, GroupByServingInfoParsed, JoinCodec, KVStore, LoggableResponse}
 import ai.chronon.online.fetcher.{FetchContext, Fetcher, MetadataStore}
 import ai.chronon.online.serde.SerDe
+import ai.chronon.online._
 import org.apache.flink.api.common.eventtime.{SerializableTimestampAssigner, WatermarkStrategy}
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
 
-import scala.collection.JavaConverters._
 import java.time.Duration
+import scala.collection.JavaConverters._
 import scala.concurrent.Future
 import scala.util.Success
 
@@ -126,8 +126,7 @@ class TestMetadataStore extends MetadataStore(FetchContext(new TestKVStore(), nu
 
 object TestJoinCodec {
   import ai.chronon.api.Extensions.JoinOps
-  import ai.chronon.online.serde.AvroCodec
-  import ai.chronon.online.serde.AvroConversions
+  import ai.chronon.online.serde.{AvroCodec, AvroConversions}
 
   def build(parentJoin: Join): JoinCodec = {
     // Key schema: listing_id (from the GroupBy that the parent join queries)

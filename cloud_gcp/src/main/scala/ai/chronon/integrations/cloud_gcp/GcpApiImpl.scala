@@ -1,34 +1,19 @@
 package ai.chronon.integrations.cloud_gcp
 
-import ai.chronon.api.Constants.MetadataDataset
-import ai.chronon.online.KVStore.GetRequest
-import ai.chronon.online.{
-  Api,
-  ExternalSourceRegistry,
-  FlagStore,
-  FlagStoreConstants,
-  GroupByServingInfoParsed,
-  KVStore,
-  KafkaLoggableResponseConsumer,
-  LoggableResponse,
-  TopicInfo
-}
+import ai.chronon.online._
 import ai.chronon.online.serde.{AvroConversions, AvroSerDe, SerDe}
 import com.google.api.gax.core.{InstantiatingExecutorProvider, NoCredentialsProvider}
 import com.google.api.gax.retrying.RetrySettings
 import com.google.cloud.bigquery.{BigQuery, BigQueryOptions}
-import com.google.cloud.bigtable.admin.v2.BigtableTableAdminClient
-import com.google.cloud.bigtable.admin.v2.BigtableTableAdminSettings
-import com.google.cloud.bigtable.data.v2.BigtableDataClient
-import com.google.cloud.bigtable.data.v2.BigtableDataSettings
+import com.google.cloud.bigtable.admin.v2.{BigtableTableAdminClient, BigtableTableAdminSettings}
 import com.google.cloud.bigtable.data.v2.stub.metrics.NoopMetricsProvider
+import com.google.cloud.bigtable.data.v2.{BigtableDataClient, BigtableDataSettings}
 
 import java.time.Duration
 import java.util
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 import java.util.function.Consumer
-import scala.concurrent.Await
 import scala.concurrent.duration._
 
 class GcpApiImpl(conf: Map[String, String]) extends Api(conf) {
@@ -64,42 +49,6 @@ class GcpApiImpl(conf: Map[String, String]) extends Api(conf) {
         (_: LoggableResponse) => {}
     }
 
-  private def warmUpKvStore(kvStore: KVStore, warmupLengthMillis: Long = 5000L): Unit = {
-    // Perform some dummy operations to warm up the client
-    // This can help reduce latency for the first real operations
-    val testKey = "warmup_key"
-    logger.info(s"Warming up KVStore with key prefix $testKey")
-    try {
-      val getFutures = kvStore.multiGet(
-        // create 100 requests to simulate load
-        (1 to 100)
-          .map(i =>
-            GetRequest(
-              keyBytes = s"${testKey}_$i".getBytes,
-              dataset = MetadataDataset
-            ))
-          .toSeq
-      )
-      val putFutures = kvStore.multiPut(
-        (1 to 100)
-          .map(i =>
-            KVStore.PutRequest(
-              keyBytes = s"${testKey}_$i".getBytes,
-              valueBytes = s"warmup_value_$i".getBytes,
-              dataset = MetadataDataset
-            ))
-          .toSeq
-      )
-      // Wait for the future to complete with a timeout
-      Await.result(getFutures, warmupLengthMillis.milliseconds)
-      Await.result(putFutures, warmupLengthMillis.milliseconds)
-      logger.info("KVStore warm-up completed successfully")
-    } catch {
-      case e: Exception =>
-        logger.warn("Warm-up operations failed", e)
-    }
-  }
-
   // BigTable clients tend to be expensive to create as they spin up a lot of threads and connections. The recommendation
   // is to create a single client per process and reuse it. This isn't an issue in the fetcher / service context. However,
   // in Flink jobs we can pack multiple tasks per task manager JVM and we don't want to create a new client per task as well
@@ -116,8 +65,6 @@ class GcpApiImpl(conf: Map[String, String]) extends Api(conf) {
             case Some(existingStore) => existingStore
             case None =>
               val newStore = createKVStore()
-              // Warm up the newStore with calls
-              warmUpKvStore(newStore)
               sharedKvStore.set(newStore)
               newStore
           }
@@ -159,7 +106,9 @@ class GcpApiImpl(conf: Map[String, String]) extends Api(conf) {
         s"Params: profileId: $maybeAppProfileId, adminClientEnabled: $enableUploadClients, " +
         s"num procs = ${Runtime.getRuntime.availableProcessors()}")
 
-    new BigTableKVStoreImpl(dataClient, maybeAdminClient, maybeBQClient, conf)
+    val kvStore = new BigTableKVStoreImpl(dataClient, maybeAdminClient, maybeBQClient, conf)
+    kvStore.init()
+    kvStore
   }
 
   private def createBigTableClients(): (BigtableDataClient, Option[BigtableTableAdminClient], Option[BigQuery]) = {
