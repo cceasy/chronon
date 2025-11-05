@@ -106,7 +106,7 @@ class SawtoothUdfPerformanceTest extends BaseJoinTest with Matchers {
     // Call the sawtoothAggregate function
     logger.info("Running SawtoothUdf.sawtoothAggregate...")
     timer.start()
-    val result = SawtoothUdf.sawtoothAggregate(aggregationInfo)(leftRows, rightRows)
+    val result = SawtoothUdf.sawtoothAggregate(aggregationInfo)(leftRows, rightRows).toArray
     timer.publish("SawtoothUdf.sawtoothAggregate")
 
     // Create a naive implementation to compare against

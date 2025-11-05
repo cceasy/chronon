@@ -140,7 +140,7 @@ object AvroConversions {
     Row.to[GenericRecord, ByteBuffer, util.ArrayList[Any], util.Map[Any, Any], Schema](
       value,
       dataType,
-      { (data: Iterator[Any], elemDataType: DataType, providedSchema: Option[Schema]) =>
+      { (data: Array[Any], elemDataType: DataType, providedSchema: Option[Schema]) =>
         val schema = providedSchema.getOrElse(AvroConversions.fromChrononSchema(elemDataType))
         val record = new GenericData.Record(schema)
         data.zipWithIndex.foreach { case (value1, idx) =>
@@ -149,7 +149,7 @@ object AvroConversions {
         record
       },
       ByteBuffer.wrap,
-      { (elems: Iterator[Any], size: Int) =>
+      { (elems: Array[Any], size: Int) =>
         val result = new util.ArrayList[Any](size)
         elems.foreach(result.add)
         result

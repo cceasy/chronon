@@ -63,6 +63,25 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
   @transient private lazy val arena =
     Array.fill(resolution.hopSizes.length)(Array.fill[Entry](windowedAggregator.length)(null))
 
+  def computeWindowsIterator(hops: HopsAggregator.OutputArrayType, endTimes: Array[Long]): Iterator[Array[Any]] = {
+
+    lazy val cache = {
+      val ret = new HopRangeCache(hops, windowedAggregator, baseIrIndices, arena)
+      ret.reset() // clear arena
+      ret
+    }
+
+    endTimes.iterator.map { et =>
+      val result = windowedAggregator.init
+      if (hops != null) {
+        for (col <- windowedAggregator.indices) {
+          result.update(col, genIr(cache, col, et))
+        }
+      }
+      result
+    }
+  }
+
   def computeWindows(hops: HopsAggregator.OutputArrayType, endTimes: Array[Long]): Array[Array[Any]] = {
     val result = Array.fill[Array[Any]](endTimes.length)(windowedAggregator.init)
 
@@ -178,6 +197,49 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
     }
   }
 
+  // method is used to generate head-realtime ness on top of hops
+  // But without the requirement that the input be sorted
+  def cumulateAndFinalizeSortedIterator(sortedInputs: mutable.Buffer[Row], // don't need to be sorted
+                                        sortedEndTimes: mutable.Buffer[Row], // sorted,
+                                        baseIR: Array[Any]): Iterator[(Row, Array[Any])] = {
+
+    if (sortedEndTimes == null || sortedEndTimes.isEmpty) Iterator.empty
+
+    if (sortedInputs == null || sortedInputs.isEmpty) {
+      val finalized = windowedAggregator.finalize(baseIR)
+      return sortedEndTimes.iterator.map(query => (query, finalized))
+    }
+
+    var inputIdx = 0
+
+    var queryIr = if (baseIR == null) {
+      new Array[Any](windowedAggregator.length)
+    } else {
+      baseIR
+    }
+
+    sortedEndTimes.indices.iterator.map { queryIdx =>
+      while (inputIdx < sortedInputs.length && sortedInputs(inputIdx).ts < sortedEndTimes(queryIdx).ts) {
+        queryIr = windowedAggregator.update(queryIr, sortedInputs(inputIdx))
+        inputIdx += 1
+      }
+
+      // clone and finalize without intermediate collections
+      val result = Array.fill[Any](windowedAggregator.length)(null)
+      var i = 0
+      while (i < windowedAggregator.length) {
+        val colAgg = windowedAggregator.columnAggregators(i)
+        val colIr = queryIr(i)
+        if (colIr != null) {
+          val finalized = colAgg.finalize(colAgg.clone(colIr))
+          result.update(i, finalized)
+        }
+        i += 1
+      }
+
+      (sortedEndTimes(queryIdx), result)
+    }
+  }
 }
 
 private class Entry(var startIndex: Int, var endIndex: Int, var ir: Any) {}

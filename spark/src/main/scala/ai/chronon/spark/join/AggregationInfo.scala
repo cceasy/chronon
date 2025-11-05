@@ -42,7 +42,7 @@ case class AggregationInfo(hopsAggregator: HopsAggregator,
 
   type Rows = mutable.WrappedArray[SparkRow]
 
-  def aggregate(leftRows: Rows, rightRows: Rows): Array[CGenericRow] = {
+  def aggregate(leftRows: Rows, rightRows: Rows): Iterator[CGenericRow] = {
     sawtoothAggregate(this)(leftRows, rightRows)
   }
 

@@ -158,20 +158,22 @@ object UnionJoin {
     // analyzing with profiler indicates that the catalyst generated code creates
     // too much garbage when dealing with UDF outputs
     // and it particularly memory intensive.
-    val outputRdd: RDD[Row] = unionDf.df.rdd.flatMap { row: Row =>
-      val leftData = row.get(leftIdx).asInstanceOf[mutable.WrappedArray[Row]]
-      val rightData = row.get(rightIdx).asInstanceOf[mutable.WrappedArray[Row]]
-      val aggregatedData: Array[CGenericRow] = aggregationInfo.aggregate(leftData, rightData)
-      val keys = leftKeyIndices.map(row.get)
+    val outputRdd: RDD[Row] = unionDf.df.rdd.mapPartitions { rows: Iterator[Row] =>
+      rows.flatMap { row =>
+        val leftData = row.get(leftIdx).asInstanceOf[mutable.WrappedArray[Row]]
+        val rightData = row.get(rightIdx).asInstanceOf[mutable.WrappedArray[Row]]
+        val aggregatedData: Iterator[CGenericRow] = aggregationInfo.aggregate(leftData, rightData)
+        val keys = leftKeyIndices.map(row.get)
 
-      aggregatedData.iterator.map { data =>
-        val values = data.values
-        val result = new Array[Any](keys.length + values.length)
+        aggregatedData.map { data =>
+          val values = data.values
+          val result = new Array[Any](keys.length + values.length)
 
-        System.arraycopy(keys, 0, result, 0, keys.length)
-        System.arraycopy(values, 0, result, keys.length, values.length)
+          System.arraycopy(keys, 0, result, 0, keys.length)
+          System.arraycopy(values, 0, result, keys.length, values.length)
 
-        new GenericRow(result)
+          new GenericRow(result)
+        }
       }
     }
 

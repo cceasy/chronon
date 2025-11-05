@@ -214,9 +214,9 @@ object Row {
   def to[StructType, BinaryType, ListType, MapType, OutputSchema](
       value: Any,
       dataType: DataType,
-      composer: (Iterator[Any], DataType, Option[OutputSchema]) => StructType,
+      composer: (Array[Any], DataType, Option[OutputSchema]) => StructType,
       binarizer: Array[Byte] => BinaryType,
-      collector: (Iterator[Any], Int) => ListType,
+      collector: (Array[Any], Int) => ListType,
       mapper: (util.Map[Any, Any] => MapType),
       extraneousRecord: Any => Array[Any] = null,
       schemaTraverser: Option[SchemaTraverser[OutputSchema]] = None): Any = {
@@ -233,8 +233,15 @@ object Row {
         value match {
           case arr: Array[Any] =>
             composer(
-              arr.iterator.zipWithIndex.map { case (value, idx) =>
-                edit(value, fields(idx).fieldType, getFieldSchema(fields(idx)))
+              {
+                val result = Array.fill[Any](arr.length)(null)
+                var i = 0
+                while (i < arr.length) {
+                  val elem = edit(arr(i), fields(i).fieldType, getFieldSchema(fields(i)))
+                  result.update(i, elem)
+                  i += 1
+                }
+                result
               },
               dataType,
               schemaTraverser.map(_.currentNode)
@@ -242,8 +249,7 @@ object Row {
           case list: util.ArrayList[Any] =>
             composer(
               list
-                .iterator()
-                .asScala
+                .toArray()
                 .zipWithIndex
                 .map { case (value, idx) => edit(value, fields(idx).fieldType, getFieldSchema(fields(idx))) },
               dataType,
@@ -252,7 +258,7 @@ object Row {
 
           case map: Map[String, Any] =>
             composer(
-              fields.iterator
+              fields
                 .map { field =>
                   val valueOpt = map.get(field.name)
                   valueOpt.map { value =>
@@ -266,7 +272,7 @@ object Row {
           case value: Any =>
             assert(extraneousRecord != null, s"No handler for $value of class ${value.getClass}")
             composer(
-              extraneousRecord(value).iterator.zipWithIndex.map { case (value, idx) =>
+              extraneousRecord(value).zipWithIndex.map { case (value, idx) =>
                 edit(value, fields(idx).fieldType, getFieldSchema(fields(idx)))
               },
               dataType,
@@ -277,17 +283,29 @@ object Row {
         value match {
           case list: util.ArrayList[Any] =>
             collector(
-              list.iterator().asScala.map(edit(_, elemType, schemaTraverser.map(_.getCollectionType))),
+              {
+                val result = Array.fill[Any](list.size())(null)
+                val it = list.iterator()
+                var i = 0
+                while (it.hasNext) {
+                  val next = it.next()
+                  val traverser = schemaTraverser.map(_.getCollectionType)
+                  val elem = edit(next, elemType, traverser)
+                  result.update(i, elem)
+                  i += 1
+                }
+                result
+              },
               list.size()
             )
           case arr: Array[_] => // avro only recognizes arrayList for its ArrayType/ListType
             collector(
-              arr.iterator.map(edit(_, elemType, schemaTraverser.map(_.getCollectionType))),
+              arr.map(edit(_, elemType, schemaTraverser.map(_.getCollectionType))),
               arr.length
             )
           case arr: mutable.WrappedArray[Any] => // handles the wrapped array type from transform function in spark sql
             collector(
-              arr.iterator.map(edit(_, elemType, schemaTraverser.map(_.getCollectionType))),
+              arr.toArray.map(edit(_, elemType, schemaTraverser.map(_.getCollectionType))),
               arr.length
             )
         }

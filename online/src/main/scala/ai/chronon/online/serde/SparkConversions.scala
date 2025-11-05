@@ -137,12 +137,10 @@ object SparkConversions {
     api.Row.to[GenericRow, Array[Byte], Array[Any], mutable.Map[Any, Any], StructType](
       value,
       dataType,
-      { (data: Iterator[Any], _, _) => new GenericRow(data.toArray) },
+      { (data: Array[Any], _, _) => new GenericRow(data) },
       { bytes: Array[Byte] => bytes },
-      { (elems: Iterator[Any], size: Int) =>
-        val result = new Array[Any](size)
-        elems.zipWithIndex.foreach { case (elem, idx) => result.update(idx, elem) }
-        result
+      { (elems: Array[Any], size: Int) =>
+        elems
       },
       { m: util.Map[Any, Any] =>
         val result = new mutable.HashMap[Any, Any]

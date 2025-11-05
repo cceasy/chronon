@@ -38,7 +38,7 @@ class HeterogeneousPartitionColumnsTest extends BaseJoinTest {
     )
 
     val viewsTable = s"$namespace.view_events_hetero"
-    DataFrameGen.events(spark, viewsSchema, count = 100, partitions = 200).drop("ts").save(viewsTable)
+    DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 200).drop("ts").save(viewsTable)
 
     // ViewsSource --> Default partition column
     val viewsSource = Builders.Source.events(
@@ -75,7 +75,7 @@ class HeterogeneousPartitionColumnsTest extends BaseJoinTest {
       .events(
         spark,
         clicksSchema,
-        count = 100,
+        count = 10000,
         partitions = 200,
         partitionColumn = Some(customPartitionCol),
         partitionFormat = Some(customFormat)
@@ -124,7 +124,7 @@ class HeterogeneousPartitionColumnsTest extends BaseJoinTest {
     val leftDf = DataFrameGen.events(
       spark,
       itemQueries,
-      100,
+      10000,
       partitions = 200,
       partitionColumn = Some(leftCustomPartitionCol),
       partitionFormat = Some(leftCustomFormat)

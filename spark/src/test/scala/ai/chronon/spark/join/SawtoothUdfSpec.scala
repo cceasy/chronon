@@ -82,7 +82,7 @@ class SawtoothUdfSpec extends BaseJoinTest with Matchers {
     )
 
     // Call the sawtoothAggregate function
-    val result = SawtoothUdf.sawtoothAggregate(aggregators)(leftRows, rightRows)
+    val result = SawtoothUdf.sawtoothAggregate(aggregators)(leftRows, rightRows).toArray
 
     // Verify the results
     // We should have one result row for each input left row
@@ -226,7 +226,7 @@ class SawtoothUdfSpec extends BaseJoinTest with Matchers {
     )
 
     // Call the sawtoothAggregate function
-    val result = SawtoothUdf.sawtoothAggregate(aggregators)(leftRows, rightRows)
+    val result = SawtoothUdf.sawtoothAggregate(aggregators)(leftRows, rightRows).toArray
 
     // Should have one result for the one query
     result.size shouldBe 1

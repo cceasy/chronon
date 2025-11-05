@@ -79,8 +79,9 @@ object SawtoothUdf {
   //                         - these features "as of" the timestamp in the search event
   //                         - by filtering events from the right side: right.ts in [left.ts - window, left.ts)
   //                         - un-windowed aggregations are also supported
-  def sawtoothAggregate(aggregators: AggregationInfo)(leftRows: mutable.WrappedArray[SparkRow],
-                                                      rightRows: mutable.WrappedArray[SparkRow]): Array[CGenericRow] = {
+  def sawtoothAggregate(aggregators: AggregationInfo)(
+      leftRows: mutable.WrappedArray[SparkRow],
+      rightRows: mutable.WrappedArray[SparkRow]): Iterator[CGenericRow] = {
 
     val hopsAggregator = aggregators.hopsAggregator
     val sawtoothAggregator = aggregators.sawtoothAggregator
@@ -114,24 +115,10 @@ object SawtoothUdf {
     val headStartTimes = leftByHeadStart.iterator.map(_._1).toArray
 
     // compute windows up-to 5min accuracy for the queries
-    val nonRealtimeIrs = sawtoothAggregator.computeWindows(hops, headStartTimes)
+    val nonRealtimeIrs = sawtoothAggregator.computeWindowsIterator(hops, headStartTimes)
 
-    assert(headStartTimes.length == nonRealtimeIrs.length)
-
-    // STEP-4. join tailAccurate - Irs with headTimeStamps and headEvents
-    // to achieve realtime accuracy
-    val result = Array.fill[CGenericRow](leftRows.size)(null)
-    var idx = 0
-
-    def consumer(row: Row, aggregatedData: Array[Any]): Unit = {
-      result.update(idx, concatenate(row.asInstanceOf[RowWrapper], aggregatedData, aggregators))
-      idx += 1
-    }
-
-    var i = 0
-    while (i < headStartTimes.length) {
+    headStartTimes.indices.iterator.zip(nonRealtimeIrs).flatMap { case (i, tailIr) =>
       val headStart = headStartTimes(i)
-      val tailIr = nonRealtimeIrs(i)
 
       // join events and queries on tailEndTimes
       val endTimes: mutable.Buffer[RowWrapper] = leftByHeadStart(i)._2
@@ -139,18 +126,16 @@ object SawtoothUdf {
       val rightHeadEvents: mutable.Buffer[Row] =
         rightByHeadStart.get(headStart).map(_.asInstanceOf[mutable.Buffer[Row]]).orNull
 
-      sawtoothAggregator.cumulateAndFinalizeSorted(
-        rightHeadEvents,
-        endTimes.asInstanceOf[mutable.Buffer[Row]],
-        tailIr,
-        consumer
-      )
-
-      i += 1
+      sawtoothAggregator
+        .cumulateAndFinalizeSortedIterator(
+          rightHeadEvents,
+          endTimes.asInstanceOf[mutable.Buffer[Row]],
+          tailIr
+        )
+        .map { case (row, aggregatedData) =>
+          concatenate(row.asInstanceOf[RowWrapper], aggregatedData, aggregators)
+        }
     }
-
-    result
-
   }
 
 }
