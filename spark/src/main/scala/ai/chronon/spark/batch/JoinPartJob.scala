@@ -57,6 +57,12 @@ class JoinPartJob(node: JoinPartNode,
       val query = Builders.Query(selects = relevantLeftCols.map(t => t -> t).toMap)
       val cachedLeftDf = tableUtils.scanDf(query = query, leftTable, range = Some(dateRange))
 
+      // If the left dataframe is empty, skip this range entirely
+      if (cachedLeftDf.isEmpty) {
+        logger.info(s"Left dataframe is empty for range $dateRange, skipping join part computation")
+        return None
+      }
+
       val runSmallMode = JoinUtils.runSmallMode(tableUtils, cachedLeftDf)
 
       val leftWithStats = cachedLeftDf.withStats

@@ -286,11 +286,44 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
   override def run(metadata: MetaData, conf: NodeContent, maybeRange: Option[PartitionRange]): Unit = {
     require(maybeRange.isDefined, "Partition range must be defined for batch node runner")
     val range = maybeRange.get
+    val dateRange = new DateRange().setStartDate(range.start).setEndDate(range.end)
+
     conf.getSetField match {
       case NodeContent._Fields.MONOLITH_JOIN =>
         runMonolithJoin(metadata, conf.getMonolithJoin, range)
+
+      case NodeContent._Fields.SOURCE_WITH_FILTER =>
+        logger.info(s"Running source with filter job for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        new SourceJob(conf.getSourceWithFilter, metadata, dateRange)(tableUtils).run()
+        logger.info(s"Successfully completed source with filter job for '${metadata.name}'")
+
+      case NodeContent._Fields.JOIN_BOOTSTRAP =>
+        logger.info(s"Running join bootstrap job for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        new JoinBootstrapJob(conf.getJoinBootstrap, metadata, dateRange)(tableUtils).run()
+        logger.info(s"Successfully completed join bootstrap job for '${metadata.name}'")
+
+      case NodeContent._Fields.JOIN_PART =>
+        logger.info(s"Running join part job for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        new JoinPartJob(conf.getJoinPart, metadata, dateRange)(tableUtils).run()
+        logger.info(s"Successfully completed join part job for '${metadata.name}'")
+
+      case NodeContent._Fields.JOIN_MERGE =>
+        logger.info(s"Running join merge job for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        val joinParts = Option(conf.getJoinMerge.join.joinParts).map(_.asScala.toSeq).getOrElse(Seq.empty)
+        new MergeJob(conf.getJoinMerge, metadata, dateRange, joinParts)(tableUtils).run()
+        logger.info(s"Successfully completed join merge job for '${metadata.name}'")
+
+      case NodeContent._Fields.JOIN_DERIVATION =>
+        logger.info(s"Running join derivation job for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        new JoinDerivationJob(conf.getJoinDerivation, metadata, dateRange)(tableUtils).run()
+        logger.info(s"Successfully completed join derivation job for '${metadata.name}'")
+
+      case NodeContent._Fields.LABEL_JOIN =>
+        throw new UnsupportedOperationException("LABEL_JOIN nodes are not yet supported in BatchNodeRunner")
+
       case NodeContent._Fields.GROUP_BY_UPLOAD =>
         runGroupByUpload(metadata, conf.getGroupByUpload, range)
+
       case NodeContent._Fields.GROUP_BY_BACKFILL =>
         logger.info(s"Running groupBy backfill for '${metadata.name}' for range: [${range.start}, ${range.end}]")
         GroupBy.computeBackfill(
@@ -300,8 +333,10 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
           overrideStartPartition = Option(range.start)
         )
         logger.info(s"Successfully completed groupBy backfill for '${metadata.name}'")
+
       case NodeContent._Fields.STAGING_QUERY =>
         runStagingQuery(metadata, conf.getStagingQuery, range)
+
       case NodeContent._Fields.EXTERNAL_SOURCE_SENSOR =>
         checkPartitions(conf.getExternalSourceSensor, range) match {
           case Success(_) =>
@@ -309,6 +344,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
             logger.error(s"ExternalSourceSensor check failed.", exception)
             throw exception
         }
+
       case _ =>
         throw new UnsupportedOperationException(s"Unsupported NodeContent type: ${conf.getSetField}")
     }

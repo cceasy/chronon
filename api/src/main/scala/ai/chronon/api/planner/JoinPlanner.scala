@@ -1,10 +1,12 @@
 package ai.chronon.api.planner
 
-import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps}
+import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps, WindowUtils}
 import ai.chronon.api.ScalaJavaConversions.{IterableOps, IteratorOps}
 import ai.chronon.api._
+import ai.chronon.planner
 import ai.chronon.planner._
 
+import scala.collection.JavaConverters._
 import scala.collection.Seq
 import scala.language.{implicitConversions, reflectiveCalls}
 
@@ -16,7 +18,8 @@ class JoinPlanner(join: Join)(implicit outputPartitionSpec: PartitionSpec)
     join.unsetMetaData()
     Option(join.joinParts).foreach(_.iterator().toScala.foreach(_.groupBy.unsetMetaData()))
     Option(join.labelParts).foreach(_.labels.iterator().toScala.foreach(_.groupBy.unsetMetaData()))
-    join.unsetOnlineExternalParts()
+    // Keep onlineExternalParts as they affect output schema and are needed for bootstrap/merge/derivation
+    // join.unsetOnlineExternalParts()
   }
 
   private def joinWithoutExecutionInfo: Join = {
@@ -24,7 +27,8 @@ class JoinPlanner(join: Join)(implicit outputPartitionSpec: PartitionSpec)
     copied.metaData.unsetExecutionInfo()
     Option(copied.joinParts).foreach(_.iterator().toScala.foreach(_.groupBy.metaData.unsetExecutionInfo()))
     Option(copied.labelParts).foreach(_.labels.iterator().toScala.foreach(_.groupBy.metaData.unsetExecutionInfo()))
-    copied.unsetOnlineExternalParts()
+    // Keep onlineExternalParts for bootstrap job to add null columns for derivations
+    // copied.unsetOnlineExternalParts()
     copied
   }
 
@@ -55,8 +59,8 @@ class JoinPlanner(join: Join)(implicit outputPartitionSpec: PartitionSpec)
     val result = new JoinBootstrapNode()
       .setJoin(joinWithoutExecutionInfo)
 
-    // bootstrap tables are unfortunately unique to the join - can't be re-used if a new join part is added
-    val bootstrapNodeName = join.metaData.name + "__bootstrap"
+    // bootstrap tables follow the standard naming convention: outputTable + "_bootstrap"
+    val bootstrapNodeName = join.metaData.name + "_bootstrap"
 
     val tableDeps = bootstrapParts.toScala.map { bp =>
       TableDependencies.fromTable(bp.table, bp.query)
@@ -149,7 +153,8 @@ class JoinPlanner(join: Join)(implicit outputPartitionSpec: PartitionSpec)
         join.metaData,
         "merge",
         mergeNodeName,
-        deps
+        deps,
+        outputTableOverride = Some(join.metaData.outputTable)
       )
 
     val copy = result.deepCopy()
@@ -165,13 +170,15 @@ class JoinPlanner(join: Join)(implicit outputPartitionSpec: PartitionSpec)
       .setJoin(join)
 
     val derivationNodeName = join.metaData.name + "/derived"
+    val derivationOutputTable = join.metaData.outputTable + "_derived"
 
     val metaData = MetaDataUtils
       .layer(
         join.metaData,
         "derive",
         derivationNodeName,
-        Seq(TableDependencies.fromTable(mergeNode.metaData.outputTable))
+        Seq(TableDependencies.fromTable(mergeNode.metaData.outputTable)),
+        outputTableOverride = Some(derivationOutputTable)
       )
 
     val copy = result.deepCopy()
@@ -231,7 +238,78 @@ class JoinPlanner(join: Join)(implicit outputPartitionSpec: PartitionSpec)
       labelJoinNodeOpt
   }
 
-  override def buildPlan: ConfPlan = ???
+  def metadataUploadNode: Node = {
+    val stepDays = 1 // Default step days for metadata upload
+
+    // Create table dependencies for all GroupBy parts (both direct GroupBy deps and upstream join deps)
+    val allDeps = Option(join.joinParts).map(_.toScala).getOrElse(Seq.empty).flatMap { joinPart =>
+      val groupBy = joinPart.groupBy
+      val hasStreamingSource = groupBy.streamingSource.isDefined
+
+      // Add dependency on the GroupBy node (either uploadToKV or streaming)
+      val groupByTableName = if (hasStreamingSource) {
+        groupBy.metaData.outputTable + s"__${GroupByPlanner.Streaming}"
+      } else {
+        groupBy.metaData.outputTable + s"__${GroupByPlanner.UploadToKV}"
+      }
+
+      val groupByDep = new TableDependency()
+        .setTableInfo(
+          new TableInfo()
+            .setTable(groupByTableName)
+        )
+        .setStartOffset(WindowUtils.zero())
+        .setEndOffset(WindowUtils.zero())
+
+      // Add dependencies on upstream join metadata uploads if GroupBy has JoinSource
+      val upstreamJoinDeps = if (hasStreamingSource) {
+        // Skip this for streaming GroupBys since the streaming node will handle this dependency
+        Seq.empty
+      } else {
+        TableDependencies.fromJoinSources(groupBy.sources)
+      }
+
+      // Return both the GroupBy dependency and any upstream join dependencies
+      Seq(groupByDep) ++ upstreamJoinDeps
+    }
+
+    val metaData =
+      MetaDataUtils.layer(join.metaData,
+                          "metadata_upload",
+                          join.metaData.name + "__metadata_upload",
+                          allDeps.toSeq,
+                          Some(stepDays))
+    val node = new JoinMetadataUpload().setJoin(joinWithoutExecutionInfo)
+
+    val copy = joinWithoutExecutionInfo.deepCopy()
+    unsetNestedMetadata(copy)
+
+    toNode(metaData, _.setJoinMetadataUpload(node), copy)
+  }
+
+  override def buildPlan: ConfPlan = {
+    val allOfflineNodes = offlineNodes
+
+    // The final offline node is the backfill terminal
+    val backfillTerminalNode = allOfflineNodes.last
+
+    // Get sensor nodes for the backfill terminal node
+    val sensorNodes = ExternalSourceSensorUtil
+      .sensorNodes(backfillTerminalNode.metaData)
+      .map((es) =>
+        toNode(es.metaData, _.setExternalSourceSensor(es), ExternalSourceSensorUtil.semanticExternalSourceSensor(es)))
+
+    val metadataUpload = metadataUploadNode
+
+    val terminalNodeNames = Map(
+      planner.Mode.BACKFILL -> backfillTerminalNode.metaData.name,
+      planner.Mode.DEPLOY -> metadataUpload.metaData.name
+    )
+
+    new ConfPlan()
+      .setNodes((allOfflineNodes ++ Seq(metadataUpload) ++ sensorNodes).asJava)
+      .setTerminalNodeNames(terminalNodeNames.asJava)
+  }
 }
 
 object JoinPlanner {
@@ -241,7 +319,8 @@ object JoinPlanner {
     join.unsetMetaData()
     Option(join.joinParts).foreach(_.iterator().toScala.foreach(_.groupBy.unsetMetaData()))
     Option(join.labelParts).foreach(_.labels.iterator().toScala.foreach(_.groupBy.unsetMetaData()))
-    join.unsetOnlineExternalParts()
+    // Keep onlineExternalParts as they affect output schema and are needed for bootstrap/merge/derivation
+    // join.unsetOnlineExternalParts()
   }
 
 }
