@@ -10,6 +10,15 @@ Testing will be for one of the following flows:
 
 The first step in any of these workflows is to [Compile](#compile) the Chronon entity which you wish to test.
 
+## Install the Zipline CLI
+To run the commands below, you need to have the Zipline CLI installed. If you haven't done so already, you can 
+download the latest .whl release from https://github.com/zipline-ai/chronon/releases,
+and with the .whl file you can install via a python package manager like pip:
+
+```bash
+pip3 install $ZIPLINE_WHEEL_PATH
+```
+
 ## Compile
 
 Compiling converts the python Chronon definition into thrift - as json - which can be passed to the Chronon engine.
@@ -17,12 +26,11 @@ Compiling converts the python Chronon definition into thrift - as json - which c
 From the root of the main Chronon directory, run:
 
 ```bash
-compile.py --conf=path/to/your/chronon_file.py
+zipline compile
 ```
-
-The path that you pass should either commence with `group_by/`, `join/`, or `staging_query/`
-
-This will produce one 
+This will compile all Chronon configuration objects and produce their compiled files in the `compiled/` directory. 
+For example, if you have a `Join` named `v1` defined at `joins/team/join.py`, 
+then the compiled file will be at `compiled/joins/team/join.v1`.
 
 ## Analyze
 
@@ -47,7 +55,7 @@ Please note that these validations will also be executed as a prerequisite check
 
 ```
 # run the analyzer
-run.py --mode=analyze --conf=production/joins/<path_to_conf_file> --skew-detection
+zipline run --mode=analyze --conf=compiled/joins/<path_to_conf_file> --skew-detection
 ```
 
 Optional parameters:
@@ -65,7 +73,7 @@ Optional parameters:
 You can run the compiled configs (either `Join`/`GroupBy`/`StagingQuery`) with `backfill` mode to generate data.
 
 ```sh
-run.py --mode=backfill --conf=production/joins/team/join.v1 --ds=2022-07-02
+zipline run --mode=backfill --conf=compiled/joins/team/join.v1 --start-ds=2022-07-02 --end-ds=2022-07-10
 ```
 
 This runs a spark job which will compute the data.
@@ -80,7 +88,7 @@ You can either serve a `GroupBy` on its own, or a `Join` if you wish to fetch re
 
 Manually running the test workflow for serving is optional. If you've validated that your Chronon config generates the correct results in backfill runs, then most of the time you can simply merge your config and let the scheduled airflow runs orchestrate the necessary steps to enable serving.
 
-## GroupBy Upload
+### GroupBy Upload
 
 You need to upload some data into a KV store to be able to fetch your data. For a join, this means:
 
@@ -110,38 +118,61 @@ Once you have marked a particular Chronon definition as online and compiled it, 
 The following command will generate a table with key-value bytes that's ready for upload to your KV store:
 
 ```bash
-run.py --mode upload --conf production/group_bys/your_group_by.v1 --ds 2023-12-01
+zipline run --mode upload --conf compiled/group_bys/your_group_by.v1 --ds 2023-12-01
 ```
 
-and similarly for Join
-
+and then to actually upload to your KV store: 
 ```bash
-run.py --mode metadata-upload --conf production/joins/your_join.v1 --ds 2023-12-01
+zipline run --mode upload-to-kv --conf compiled/group_bys/your_group_by.v1 --ds 2023-12-01
 ```
 
 The next step is to move the data from these tables into your KV store. For this, you need to use your internal implementation of KV store integration. This should already be what your Airflow jobs are configured to run, so you can always rely on that, or if your Chronon team has provided you with a manual upload command to run you can use that.
 
-## Fetching results
+### Deploy Flink streaming job
 
-You can fetch your uploaded conf by its name and with a json of keys. Json types needs to match the key types in hive. So a string should be quoted, an int/long shouldn't be quoted. Note that the json key cannot contain spaces - or it should be properly quoted. Similarly, when a join has multiple keys, there should be no space around the comma. For example, `-k '{"user_id":123,"merchant_id":456}'`. The fetch would return partial results if only some keys are provided. It would also output an error message indicating the missing keys, which is useful in case of typos.
+If your GroupBy is a streaming GroupBy, you will want to also run the streaming job that will aggregate and push intermediate data to the KV store. Flink is the preferred streaming engine, though Spark streaming is also supported but not recommended.
+
+```sh
+zipline run --mode streaming deploy --conf compiled/group_bys/your_group_by.v1  --version-check --disable-cloud-logging [--latest-savepoint| --no-savepoint | --custom-savepoint]
+```
+
+Only one of the three savepoint options below can be specified:
+
+1. `--latest-savepoint` will deploy the streaming job from the latest savepoint available. Based on the job id, the Flink checkpoint directory will be checked and scanned for the latest checkpoint number.  
+2. `--no-savepoint` will deploy the streaming job without a savepoint.
+
+3. `--custom-savepoint` will deploy the streaming job from a custom savepoint path to start from.
+
+`--version-check`: Checks if Zipline engine version of running streaming job is different from the Zipline engine version running locally on the CLI (on Airflow or laptop) and deploys the job if they are different.
+
+`--disable-cloud-logging`: Disables cloud logging from being outputted locally on the CLI. This is **required** when running the streaming CLI command on Airflow so that the command will exit, or otherwise the streaming CLI command with cloud logging outputted will run in the foreground and not exit as streaming jobs are long lived.
+
+### Metadata upload
+After running `upload`, `upload-to-kv`, and `streaming` for all the `GroupBy`s in a `Join`, in order to fetch features for this `Join`, we need to 
+run a metadata upload of the `Join` config to the KV store. This will be used by the fetcher below to understand 
+how to deserialize the batch (and streaming) data and provide the feature values.
 
 ```bash
-python3 ~/.local/bin/run.py --mode=fetch -k '{"user_or_visitor":"u_106386039"}' -n team/join.v1 -t join
+zipline run --mode metadata-upload --conf compiled/joins/your_join.v1 --ds 2023-12-01
+```
+
+Chronon also supports uploading `GroupBy` metadata on its own, in case you want to fetch directly from a `GroupBy` without a `Join`. The process is similar - just run the following command to upload the `GroupBy` metadata so that the fetcher knows
+```bash
+zipline run --mode metadata-upload --conf compiled/group_bys/your_group_by.v1 --ds 2023-12-01
+```
+
+### Fetching results
+
+You can fetch features for your uploaded conf by its name and with a json of keys. Json types needs to match the key types. So a string should be quoted, an int/long shouldn't be quoted. Note that the json key cannot contain spaces - or it should be properly quoted. Similarly, when a join has multiple keys, there should be no space around the comma. For example, `-k '{"user_id":123,"merchant_id":456}'`. The fetch would return partial results if only some keys are provided. It would also output an error message indicating the missing keys, which is useful in case of typos.
+
+```bash
+zipline run --mode=fetch --conf compiled/joins/your_join.v1 -k '{"user_or_visitor":"u_106386039"}' --name <JOIN_NAME>
 ```
 
 Note that this is simply the test workflow for fetching. For production serving, see the [Serving documentation](./Serve.md).
 
-## Testing streaming
 
-You can test if your conf is a valid streaming conf by specifying a `--mode=local-streaming`.
-
-```sh
-run.py --mode=local-streaming --conf=production/group_bys/team/your_group_by.v1 -k kafka_broker_address:port_number
-```
-
-The `-k` argument specifies a kafka broker to be able to connect to kafka. You need to know which kafka cluster your `topic` lives in.
-
-## Online offline consistency metrics computation
+### Online offline consistency metrics computation
 
 After enabling online serving, you may be interested in the online offline consistency metrics for the job. 
 
