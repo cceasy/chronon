@@ -304,6 +304,76 @@ jobs:
         run: |
           jf rt upload cloud_aws_lib_deploy.jar "jars/${VERSION#v}/"
 
+  build_and_publish_docker:
+    runs-on: ubuntu-latest
+    needs: [ check_if_latest ]
+    permissions:
+      contents: read
+      packages: read
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Configure GCP Credentials for Main Project
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{secrets.GCP_MAIN_PROJECT_ID}}
+          workload_identity_provider: projects/${{secrets.GCP_MAIN_PROJECT_NUMBER}}/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-actions@${{secrets.GCP_MAIN_PROJECT_ID}}.iam.gserviceaccount.com
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure AWS Credentials for Main Project
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{secrets.AWS_ACCOUNT_ID}}:role/github_actions
+          aws-region: ${{secrets.AWS_REGION}}
+
+      - name: Download JAR files from Canary Candidate
+        run: |
+          # Download Jars from Canary for Docker build
+          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/cloud_gcp_lib_deploy.jar .
+          aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/cloud_aws_lib_deploy.jar .
+          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/service_assembly_deploy.jar .
+
+      - name: Prepare build artifacts
+        run: |
+          # Copy jars to build_output as docker build can't access the downloaded files directly
+          mkdir -p build_output
+          cp service_assembly_deploy.jar build_output/
+          cp cloud_aws_lib_deploy.jar build_output/
+          cp cloud_gcp_lib_deploy.jar build_output/
+
+      - name: Build and push Fetcher Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/fetcher/Dockerfile
+          platforms: linux/amd64, linux/arm64
+          sbom: true
+          provenance: true
+          push: true
+          tags: |
+            ziplineai/chronon-fetcher:${{ github.sha }}
+            ${{ env.VERSION && format('ziplineai/chronon-fetcher:{0}', env.VERSION) || '' }}
+            ${{ needs.check_if_latest.outputs.is_latest == 'true' && 'ziplineai/chronon-fetcher:latest' || '' }}
+
+      - name: Clean up build artifacts
+        run: rm -rf build_output
+
   clean_up_artifacts:
     permissions:
       id-token: write
