@@ -127,3 +127,4 @@ MODULE.bazel*
 
 # mill build output
 out/**
+_*/
