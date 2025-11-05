@@ -1,7 +1,7 @@
-from gen_thrift.api.ttypes import DataKind, JoinSource, Source, TDataType
+from gen_thrift.api.ttypes import JoinSource, Source
 from joins.risk import user_transactions
 
-from ai.chronon.model import Model, ModelType
+from ai.chronon.model import Model, ModelBackend, InferenceSpec, ModelTransforms
 from ai.chronon.query import Query, selects
 
 """
@@ -17,6 +17,17 @@ source = Source(
     )
 )
 
-v1 = Model(
-    source=source, outputSchema=TDataType(DataKind.DOUBLE), modelType=ModelType.XGBoost
+model = Model(
+    version="1.0",
+    inference_spec=InferenceSpec(
+        model_backend=ModelBackend.VERTEXAI,
+        model_backend_params={"model_type": "xgboost"}
+    )
+)
+
+v1 = ModelTransforms(
+    sources=[source],
+    models=[model],
+    passthrough_fields=["user_id"],
+    version=1
 )

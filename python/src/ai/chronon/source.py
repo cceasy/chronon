@@ -69,7 +69,7 @@ def EntitySource(
     )
 
 
-def JoinSource(join: ttypes.Join, query: ttypes.Query) -> ttypes.Source:
+def JoinSource(join: ttypes.Join, query: ttypes.Query = None) -> ttypes.Source:
     """
     The output of a join can be used as a source for `GroupBy`.
     Useful for expressing complex computation in chronon.

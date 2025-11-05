@@ -2,7 +2,15 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Type
 
-from gen_thrift.api.ttypes import ConfType, GroupBy, Join, MetaData, Model, StagingQuery, Team
+from gen_thrift.api.ttypes import (
+    ConfType,
+    GroupBy,
+    Join,
+    MetaData,
+    ModelTransforms,
+    StagingQuery,
+    Team,
+)
 
 import ai.chronon.cli.compile.parse_teams as teams
 from ai.chronon.cli.compile.conf_validator import ConfValidator
@@ -41,7 +49,7 @@ class CompileContext:
                 cls=StagingQuery,
                 config_type=ConfType.STAGING_QUERY,
             ),
-            ConfigInfo(folder_name="models", cls=Model, config_type=ConfType.MODEL),
+            ConfigInfo(folder_name="models", cls=ModelTransforms, config_type=ConfType.MODEL),
             ConfigInfo(
                 folder_name="teams_metadata", cls=MetaData, config_type=None
             ),  # only for team metadata

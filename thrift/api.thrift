@@ -180,6 +180,7 @@ union Source {
     1: EventSource events
     2: EntitySource entities
     3: JoinSource joinSource
+    4: ModelTransforms modelTransforms
 }
 
 enum Operation {
@@ -517,25 +518,6 @@ struct DataSpec {
     4: optional map<string, string> props
 }
 
-// ====================== Model related concepts ======================
-enum ModelType { // don't plan to do much with this anytime soon
-    XGBoost = 0
-    PyTorch = 1
-    TensorFlow = 2
-    ScikitLearn = 3
-    LightGBM = 4
-
-    Other = 100
-}
-
-struct Model {
-    1: optional MetaData metaData
-    2: optional ModelType modelType
-    3: optional TDataType outputSchema
-    4: optional Source source
-    5: optional map<string, string> modelParams
-}
-
 struct Team {
     1: optional string name
     2: optional string description
@@ -552,4 +534,66 @@ struct Team {
 enum DataModel {
     ENTITIES = 0
     EVENTS = 1
+}
+
+// ====================== Model related concepts ======================
+
+/**
+ * A Model represents a single ML model and includes details to help with model inference (batch & online)
+ * as well as model training and deployment orchestration
+*/
+struct Model {
+    1: optional MetaData metaData
+
+    // Model + model backend specific details necessary to perform inference
+    2: optional InferenceSpec inferenceSpec
+
+    // Spark SQL queries to transform input data to the format expected by the model
+    3: optional map<string, string> inputMapping
+
+    // Spark SQL queries to transform model output to desired output format
+    4: optional map<string, string> outputMapping
+
+    // Orchestration and deployment related configs are a TODO for now
+    // will be added here in the future
+}
+
+enum ModelBackend {
+    VertexAI = 0
+    SageMaker = 1
+    // other backends that we support will go here
+}
+
+struct InferenceSpec {
+    1: optional ModelBackend modelBackend
+
+    // Captures params such as batch size that are used to configure calls
+    2: optional map<string, string> modelBackendParams
+
+    // If present, indicates the resources needed for the model inference calls
+    // Not needed for hosted models (e.g. OpenAI's embedding models), useful for custom models on VertexAI/SageMaker
+    // to scale batch inference jobs
+    3: optional ResourceConfig resourceConfig
+}
+
+struct ResourceConfig {
+    1: optional i32 minReplicaCount
+    2: optional i32 maxReplicaCount
+    3: optional string machineType
+}
+
+/**
+* ModelTransforms allows us to take the output of an existing source (E.g. Event / Entity / Join) and
+* enrich it with 1/more model outputs. This in-turn can be fed into downstream computations like GroupBy or hit directly
+* via the fetcher. The GroupBy path allows for async materialization of model outputs to the online KV store for low latency
+* serving. The fetcher path allows for on-demand model inference during online serving (at the cost of higher latency / more
+* model inference calls).
+**/
+struct ModelTransforms {
+    1: optional list<Source> sources
+    2: optional list<Model> models
+
+    // fields from the source that we want to passthrough alongside the model outputs
+    3: optional list<string> passthroughFields
+    4: optional MetaData metaData
 }
