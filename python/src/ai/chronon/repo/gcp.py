@@ -248,7 +248,7 @@ class GcpRunner(Runner):
             )
             gcs_files.append(
                 GcpRunner.upload_gcs_blob(
-                    get_customer_warehouse_bucket(), metadata_conf_path, destination_file_path
+                    self.warehouse_bucket, metadata_conf_path, destination_file_path
                 )
             )
 
