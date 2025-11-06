@@ -49,7 +49,7 @@ class JoinPlanner(join: Join)(implicit outputPartitionSpec: PartitionSpec)
       join.metaData,
       "left_source",
       outputTableName,
-      TableDependencies.fromSource(join.left).toSeq
+      TableDependencies.fromSource(join.left, maxWindowOpt = Some(WindowUtils.zero())).toSeq
     )
 
     toNode(metaData, _.setSourceWithFilter(result), result)
