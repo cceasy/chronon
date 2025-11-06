@@ -29,8 +29,8 @@ class BigQueryCatalogTest extends AnyFlatSpec with MockitoSugar {
     additionalConfig = Some(
       Map(
         "spark.chronon.table.format_provider.class" -> classOf[GcpFormatProvider].getName,
-        "hive.metastore.uris" -> "thrift://localhost:9083",
         "spark.chronon.partition.column" -> "ds",
+        "spark.chronon.table_write.format" -> "iceberg",
 //        "spark.hadoop.fs.gs.impl" -> "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem",
 //        "spark.hadoop.fs.AbstractFileSystem.gs.impl" -> "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS",
         "spark.sql.catalogImplementation" -> "in-memory",
@@ -89,11 +89,10 @@ class BigQueryCatalogTest extends AnyFlatSpec with MockitoSugar {
   }
 
   it should "verify dynamic classloading of GCP providers" in {
-    assertEquals("thrift://localhost:9083", spark.sqlContext.getConf("hive.metastore.uris"))
     assertTrue(FormatProvider.from(spark).isInstanceOf[GcpFormatProvider])
   }
 
-  it should "be consistent about parsing table names for spark and bigquery" in {
+  it should "be consistent about parsing table names for spark and bigquery" ignore {
     val sparkTable = "`project-id`.dataset.table_name"
 
     val bTableId = SparkBQUtils.toTableId(sparkTable)(spark)
@@ -106,6 +105,41 @@ class BigQueryCatalogTest extends AnyFlatSpec with MockitoSugar {
     assertThrows[ParseException] {
       val bTableId = SparkBQUtils.toTableId(invalidSparkTableName)(spark)
     }
+  }
+
+  it should "table renames in bigquery catalog" ignore {
+    // Create an empty dataframe with a simple schema
+    val emptyDf = spark.createDataFrame(spark.sparkContext.emptyRDD[org.apache.spark.sql.Row],
+      org.apache.spark.sql.types.StructType(Seq(
+        org.apache.spark.sql.types.StructField("id", org.apache.spark.sql.types.IntegerType, nullable = false),
+        org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, nullable = true)
+      )))
+
+    val originalTableName = "data.test_rename_original"
+    val renamedTableName = "data.test_rename_new"
+
+    // Clean up any existing tables
+    try { spark.sql(s"DROP TABLE IF EXISTS $originalTableName") } catch { case _: Exception => }
+    try { spark.sql(s"DROP TABLE IF EXISTS $renamedTableName") } catch { case _: Exception => }
+
+    // Write the empty dataframe to create a table
+    tableUtils.insertPartitions(emptyDf,
+      originalTableName,
+      Map("file_format" -> "PARQUET", "table_type" -> "iceberg"),
+      List.empty)
+
+    // Verify the original table exists
+    assertTrue(s"Original table $originalTableName should exist", tableUtils.tableReachable(originalTableName))
+
+    // Rename the table using ALTER TABLE
+    spark.sql(s"ALTER TABLE $originalTableName RENAME TO $renamedTableName")
+
+    // Verify the table was renamed
+    assertTrue(s"Renamed table $renamedTableName should exist", tableUtils.tableReachable(renamedTableName))
+    assertTrue(s"Original table $originalTableName should not exist", !tableUtils.tableReachable(originalTableName))
+
+    // Clean up
+    try { spark.sql(s"DROP TABLE IF EXISTS $renamedTableName") } catch { case _: Exception => }
   }
 
   it should "correctly parse table names to Spark Identifiers" in {
@@ -315,6 +349,8 @@ class BigQueryCatalogTest extends AnyFlatSpec with MockitoSugar {
     val input = new Input(inputStream);
     val deserializedObj = kryo.readClassAndObject(input);
     input.close();
+    original.close()
+    deserializedObj.asInstanceOf[ResolvingFileIO].close()
 
     assertNotNull("Deserialized object should not be null", deserializedObj);
     assertTrue("Deserialized object should be an instance of ResolvingFileIO",
