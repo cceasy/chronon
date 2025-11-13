@@ -1,5 +1,6 @@
 package ai.chronon.integrations.cloud_gcp
 import ai.chronon.api.Builders.MetaData
+import ai.chronon.api.JobStatusType
 import ai.chronon.spark.submission.JobSubmitterConstants._
 import ai.chronon.spark.submission.{JobSubmitter, JobType, FlinkJob => TypeFlinkJob, SparkJob => TypeSparkJob}
 import com.google.api.gax.rpc.ApiException
@@ -91,17 +92,24 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
     latestCheckpointUri
   }
 
-  override def status(jobId: String): String = {
+  override def status(jobId: String): JobStatusType = {
     try {
-
       val currentJob: Job = jobControllerClient.getJob(projectId, region, jobId)
-      currentJob.getStatus.getState.toString
+      currentJob.getStatus.getState match {
+        case JobStatus.State.PENDING                              => JobStatusType.PENDING
+        case JobStatus.State.ERROR                                => JobStatusType.FAILED
+        case JobStatus.State.DONE                                 => JobStatusType.SUCCEEDED
+        case JobStatus.State.RUNNING | JobStatus.State.SETUP_DONE => JobStatusType.RUNNING
+        case JobStatus.State.CANCEL_STARTED | JobStatus.State.CANCEL_PENDING | JobStatus.State.CANCELLED =>
+          JobStatusType.FAILED
+        case _ => JobStatusType.UNKNOWN
+      }
 
     } catch {
 
       case e: ApiException =>
         logger.error(s"Error monitoring job: ${e.getMessage}")
-        "UNKNOWN" // If there's an error, we return UNKNOWN status
+        JobStatusType.UNKNOWN // If there's an error, we return UNKNOWN status
     }
   }
 

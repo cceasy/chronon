@@ -1,5 +1,6 @@
 package ai.chronon.integrations.cloud_gcp
 
+import ai.chronon.api.JobStatusType
 import ai.chronon.spark.submission.{JobSubmitter, JobType}
 import com.google.cloud.dataproc.v1._
 import ai.chronon.spark.submission.JobSubmitterConstants._
@@ -51,15 +52,23 @@ class DataprocServerlessSubmitter(batchControllerClient: BatchControllerClient,
     }
   }
 
-  override def status(jobId: String): String = {
+  override def status(jobId: String): JobStatusType = {
     try {
       val batchName = s"projects/$projectId/locations/$region/batches/$jobId"
       val batch = batchControllerClient.getBatch(batchName)
-      batch.getState.toString
+      batch.getState match {
+        case Batch.State.PENDING    => JobStatusType.PENDING
+        case Batch.State.RUNNING    => JobStatusType.RUNNING
+        case Batch.State.CANCELLING => JobStatusType.FAILED
+        case Batch.State.CANCELLED  => JobStatusType.FAILED
+        case Batch.State.SUCCEEDED  => JobStatusType.SUCCEEDED
+        case Batch.State.FAILED     => JobStatusType.FAILED
+        case _                      => JobStatusType.UNKNOWN
+      }
     } catch {
       case e: ApiException =>
         logger.error(s"Error getting batch status: ${e.getMessage}")
-        "UNKNOWN"
+        JobStatusType.UNKNOWN
     }
   }
 
