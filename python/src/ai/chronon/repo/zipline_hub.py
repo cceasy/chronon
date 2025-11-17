@@ -211,13 +211,16 @@ class ZiplineHub:
         self,
         conf_name,
         conf_hash_map,
-    ):
+        parameters=None,
+        ):
         if not self.eval_url:
             raise ValueError(" ❌ Eval URL not specified. Please specify EVAL_URL in teams.py, environment variables, or use the --eval-url flag.")
         _request = {
             "confName": conf_name,
             "confHashMap": conf_hash_map,
         }
+        if parameters:
+            _request["parameters"] = parameters
         try:
             response = requests.post(self.eval_url + "/eval", json=_request, headers=self.auth_headers(self.eval_url))
             response.raise_for_status()

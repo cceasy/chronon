@@ -119,7 +119,7 @@
       "ts": "d1ae44a8f84a262685dbf1bdb9f8d46e",
       "user_id": "80c458b68b34de93d3c4c555ef2b2ddc"
     },
-    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_gcp_exports_user_activities__0_with_offset_0\", \"spec\": \"data.gcp_exports_user_activities__0/ds={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_gcp_exports_dim_listings__0_with_offset_0\", \"spec\": \"data.gcp_exports_dim_listings__0/ds={{ macros.ds_add(ds, 0) }}\"}], \"label_join\": false}",
+    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_gcp_exports_user_activities__0_with_offset_0\", \"spec\": \"data.gcp_exports_user_activities__0/ds={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_gcp_exports_dim_listings__0_with_offset_0\", \"spec\": \"data.gcp_exports_dim_listings__0/ds={{ macros.ds_add(ds, 0) }}\"}]}",
     "executionInfo": {
       "clusterConf": {
         "modeClusterConfigs": {

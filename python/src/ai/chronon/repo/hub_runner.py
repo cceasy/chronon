@@ -27,6 +27,8 @@ class HubConfig:
     sa_name: Optional[str] = None
     eval_url: Optional[str] = None
     fetcher_url: Optional[str] = None
+    cloud_provider: Optional[str] = None
+    artifact_prefix: Optional[str] = None
 
 
 @dataclass
@@ -330,19 +332,46 @@ def fetch(repo, conf, hub_url, use_auth, fetcher_url, schema, key_json):
     type=str,
     default=None
 )
+@click.option(
+    "--generate-test-config",
+    help="Generate a test config for data testing",
+    is_flag=True,
+    default=None
+)
+@click.option(
+    "--test-data-path",
+    help="Path to the test data yaml file to upload and use for evaluation.",
+    type=str,
+    default=None
+)
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
 @handle_compile
-def eval(repo, conf, hub_url, use_auth, eval_url, skip_compile):
+def eval(repo, conf, hub_url, use_auth, eval_url, generate_test_config, test_data_path, skip_compile):
     """
     - Submit a eval job to Zipline.
     Response should contain a list of validation checks that are executed in a sparkLocalSession with Metadata access.
     - Call upload API to upload the conf contents for the list of confs that were different.
     - Call the actual eval API.
     """
+    parameters = {}
     hub_conf = get_hub_conf(conf, root_dir=repo)
     zipline_hub = ZiplineHub(base_url=hub_url or hub_conf.hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, eval_url=eval_url or hub_conf.eval_url)
     conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
     branch = get_current_branch()
+    if test_data_path:
+        # Upload the test data skeleton to the bucket.
+        if hub_conf.cloud_provider != "gcp":
+            print(" 🔴 Test data path is only supported for GCP")
+            sys.exit(1)
+        # import here to avoid dependency for other clouds.
+        from ai.chronon.repo.gcp import GcpRunner
+        zipline_artifact_prefix = hub_conf.artifact_prefix
+        if not zipline_artifact_prefix:
+            print(" 🔴 Zipline artifact prefix is not set")
+            sys.exit(1)
+        url = f"eval/test_data/{os.path.basename(test_data_path)}"
+        GcpRunner.upload_gcs_blob(zipline_artifact_prefix.replace("gs://", ""), test_data_path, url)
+        parameters["testDataPath"] = f"{zipline_artifact_prefix}/{url}"
 
     hub_uploader.compute_and_upload_diffs(
         branch, zipline_hub=zipline_hub, local_repo_confs=conf_name_to_hash_dict
@@ -350,10 +379,12 @@ def eval(repo, conf, hub_url, use_auth, eval_url, skip_compile):
 
     # get conf name
     conf_name = utils.get_metadata_name_from_conf(repo, conf)
-
+    if generate_test_config:
+        parameters["generateTestDataSkeleton"] = "true"
     response_json = zipline_hub.call_eval_api(
         conf_name=conf_name,
         conf_hash_map={conf.name: conf.hash for conf in conf_name_to_hash_dict.values()},
+        parameters=parameters,
     )
     if response_json.get("success"):
         print(" 🟢 Eval job finished successfully")
@@ -373,11 +404,8 @@ def get_hub_conf(conf_path, root_dir="."):
     file_path = os.path.join(root_dir, conf_path)
     common_env_map = get_common_env_map(file_path)
     common_env_map.update(os.environ) # Override config with cli args
-    hub_url = common_env_map.get("HUB_URL")
-    frontend_url = common_env_map.get("FRONTEND_URL")
-    sa_name = common_env_map.get("SA_NAME")
-    eval_url = common_env_map.get("EVAL_URL")
-    return HubConfig(hub_url=hub_url, frontend_url=frontend_url, sa_name=sa_name, eval_url=eval_url)
+    kwargs = {k: common_env_map.get(k.upper()) for k in HubConfig.__dataclass_fields__.keys()}
+    return HubConfig(**kwargs)
 
 def get_hub_conf_from_metadata_conf(metadata_path, root_dir="."):
     """

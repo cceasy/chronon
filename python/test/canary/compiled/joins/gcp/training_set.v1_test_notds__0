@@ -144,7 +144,7 @@
       "user_id_purchase_price_sum_3d": "1d85a493771d48ac9fb6581c18f186e2",
       "user_id_purchase_price_sum_7d": "1d85a493771d48ac9fb6581c18f186e2"
     },
-    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_checkouts_notds_with_offset_0\", \"spec\": \"data.checkouts_notds/notds={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_purchases_notds_with_offset_0\", \"spec\": \"data.purchases_notds/notds={{ macros.ds_add(ds, 0) }}\"}], \"label_join\": false}",
+    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_checkouts_notds_with_offset_0\", \"spec\": \"data.checkouts_notds/notds={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_purchases_notds_with_offset_0\", \"spec\": \"data.purchases_notds/notds={{ macros.ds_add(ds, 0) }}\"}]}",
     "executionInfo": {
       "clusterConf": {
         "modeClusterConfigs": {

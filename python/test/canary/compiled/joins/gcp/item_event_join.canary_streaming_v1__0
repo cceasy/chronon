@@ -127,7 +127,7 @@
       "ts": "ad9fd4c611e20ad833819a4ce9d752bf",
       "user_id": "493d3df28f80664abd11b19fcd33b6e6"
     },
-    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_item_events_parquet_compat_with_offset_0\", \"spec\": \"data.item_events_parquet_compat/ds={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_item_events_parquet_compat_partitioned_with_offset_0\", \"spec\": \"data.item_events_parquet_compat_partitioned/ds={{ macros.ds_add(ds, 0) }}\"}], \"label_join\": false}",
+    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_item_events_parquet_compat_with_offset_0\", \"spec\": \"data.item_events_parquet_compat/ds={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_item_events_parquet_compat_partitioned_with_offset_0\", \"spec\": \"data.item_events_parquet_compat_partitioned/ds={{ macros.ds_add(ds, 0) }}\"}]}",
     "executionInfo": {
       "clusterConf": {
         "modeClusterConfigs": {
