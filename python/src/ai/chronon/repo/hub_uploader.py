@@ -76,18 +76,8 @@ def compute_and_upload_diffs(
 ):
     # Determine which confs are different from the ZiplineHub
     # Call Zipline hub with `names_and_hashes` as the argument to get back
-
-    # Note: we temporarily filter out MODEL configurations as we've not updated the Hub backend to handle them yet
-    from gen_thrift.api.ttypes import ConfType
-    filtered_local_repo_confs = {name: conf for name, conf in local_repo_confs.items() if conf.confType != ConfType.MODEL}
-    
-    names_to_hashes = {name: local_conf.hash for name, local_conf in filtered_local_repo_confs.items()}
-    
-    model_count = len(local_repo_confs) - len(filtered_local_repo_confs)
-    if model_count > 0:
-        print(f"\n 🧮 Computed hashes for {len(names_to_hashes)} local files ({model_count} MODEL configs excluded).")
-    else:
-        print(f"\n 🧮 Computed hashes for {len(names_to_hashes)} local files.")
+    names_to_hashes = {name: local_conf.hash for name, local_conf in local_repo_confs.items()}
+    print(f"\n 🧮 Computed hashes for {len(names_to_hashes)} local files.")
 
     changed_conf_names = zipline_hub.call_diff_api(names_to_hashes)
 
@@ -101,11 +91,10 @@ def compute_and_upload_diffs(
         )
 
         # a list of names for diffed hashes on branch
-        diffed_confs = {k: filtered_local_repo_confs[k] for k in changed_conf_names}
-        
+        diffed_confs = {k: local_repo_confs[k] for k in changed_conf_names}
+
         conf_names_str = "\n    - ".join(diffed_confs.keys())
-        if diffed_confs:
-            print(f"    - {conf_names_str}")
+        print(f"    - {conf_names_str}")
 
         diff_confs = []
         for _, conf in diffed_confs.items():
