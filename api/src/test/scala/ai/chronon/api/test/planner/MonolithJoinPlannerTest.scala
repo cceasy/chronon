@@ -102,7 +102,7 @@ class MonolithJoinPlannerTest extends AnyFlatSpec with Matchers {
 
     plan.terminalNodeNames.asScala should contain key ai.chronon.planner.Mode.BACKFILL
     plan.terminalNodeNames.asScala should contain key ai.chronon.planner.Mode.DEPLOY
-    plan.terminalNodeNames.asScala(ai.chronon.planner.Mode.BACKFILL) should equal("testJoin__backfill")
+    plan.terminalNodeNames.asScala(ai.chronon.planner.Mode.BACKFILL) should equal("testJoin__monolith_join")
     plan.terminalNodeNames.asScala(ai.chronon.planner.Mode.DEPLOY) should equal("testJoin__metadata_upload")
   }
 

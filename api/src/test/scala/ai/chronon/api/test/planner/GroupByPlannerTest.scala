@@ -108,7 +108,7 @@ class GroupByPlannerTest extends AnyFlatSpec with Matchers {
       val plan = planner.buildPlan
       validateGBPlan(planner.groupBy, plan)
       plan.terminalNodeNames.asScala(Mode.DEPLOY) should equal("user_charges__uploadToKV")
-      plan.terminalNodeNames.asScala(Mode.BACKFILL) should equal("user_charges__backfill")
+      plan.terminalNodeNames.asScala(Mode.BACKFILL) should equal("user_charges__group_by")
     }
   }
 
@@ -197,7 +197,7 @@ class GroupByPlannerTest extends AnyFlatSpec with Matchers {
 
     // DEPLOY mode should now point to streaming node
     plan.terminalNodeNames.asScala(Mode.DEPLOY) should equal("user_charges__streaming")
-    plan.terminalNodeNames.asScala(Mode.BACKFILL) should equal("user_charges__backfill")
+    plan.terminalNodeNames.asScala(Mode.BACKFILL) should equal("user_charges__group_by")
 
     // Verify streaming node has correct table dependencies (same as uploadToKV)
     val streamingNode = plan.nodes.asScala.find(_.content.isSetGroupByStreaming).get

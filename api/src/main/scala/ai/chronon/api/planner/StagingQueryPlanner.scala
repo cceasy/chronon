@@ -20,8 +20,8 @@ case class StagingQueryPlanner(stagingQuery: StagingQuery)(implicit outputPartit
 
     val metaData = MetaDataUtils.layer(
       stagingQuery.metaData,
-      "backfill",
-      stagingQuery.metaData.name + "__backfill",
+      "staging",
+      stagingQuery.metaData.name + "__staging",
       tableDependencies,
       outputTableOverride = Some(stagingQuery.metaData.outputTable)
     )

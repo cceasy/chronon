@@ -38,7 +38,7 @@ class PlannerSensorIntegrationTest extends AnyFlatSpec with Matchers {
           sensor.metaData should not be null
 
           // Verify sensor metadata follows expected naming pattern
-          sensor.metaData.name should include("__sensor__backfill")
+          sensor.metaData.name should include("__sensor")
           sensor.metaData.name should include(groupBy.metaData.name)
 
           // Verify sensor has no table dependencies (sensors are leaf nodes)
@@ -81,7 +81,7 @@ class PlannerSensorIntegrationTest extends AnyFlatSpec with Matchers {
           sensor.metaData should not be null
 
           // Verify sensor metadata follows expected naming pattern
-          sensor.metaData.name should include("__sensor__backfill")
+          sensor.metaData.name should include("__sensor")
           sensor.metaData.name should include(stagingQuery.metaData.name)
 
           // Verify sensor has no table dependencies
@@ -120,7 +120,7 @@ class PlannerSensorIntegrationTest extends AnyFlatSpec with Matchers {
           sensor.metaData should not be null
 
           // Verify sensor metadata follows expected naming pattern
-          sensor.metaData.name should include("__sensor__backfill")
+          sensor.metaData.name should include("__sensor")
           sensor.metaData.name should include(join.metaData.name)
 
           // Verify sensor has no table dependencies
@@ -162,7 +162,7 @@ class PlannerSensorIntegrationTest extends AnyFlatSpec with Matchers {
 
           withClue(s"$plannerType planner sensor validation: ") {
             // Verify sensor follows consistent structure
-            sensor.metaData.name should fullyMatch regex "wait_for_sensor.*"
+            sensor.metaData.name should fullyMatch regex ".*__sensor"
             sensor.metaData.executionInfo should not be null
             sensor.metaData.executionInfo.outputTableInfo should not be null
             sensor.metaData.executionInfo.outputTableInfo.table should not be empty

@@ -25,13 +25,13 @@ case class MonolithJoinPlanner(join: Join)(implicit outputPartitionSpec: Partiti
 
   }
 
-  def backfillNode: Node = {
+  def monolithJoinNode: Node = {
     val tableDeps = TableDependencies.fromJoin(join)
 
     val metaData =
       MetaDataUtils.layer(join.metaData,
-                          "backfill",
-                          join.metaData.name + "__backfill",
+                          "monolith_join",
+                          join.metaData.name + "__monolith_join",
                           tableDeps,
                           outputTableOverride = Some(join.metaData.outputTable))
     val node = new planner.MonolithJoinNode().setJoin(join)
@@ -86,7 +86,7 @@ case class MonolithJoinPlanner(join: Join)(implicit outputPartitionSpec: Partiti
   override def buildPlan: planner.ConfPlan = {
     val confPlan = new planner.ConfPlan()
 
-    val backfill = backfillNode
+    val backfill = monolithJoinNode
     val sensorNodes = ExternalSourceSensorUtil
       .sensorNodes(backfill.metaData)
       .map((es) =>

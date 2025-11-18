@@ -30,8 +30,8 @@ case class GroupByPlanner(groupBy: GroupBy)(implicit outputPartitionSpec: Partit
       Option(groupBy.metaData.executionInfo).filter(_.isSetStepDays).map(_.stepDays).getOrElse(defaultStepDays)
 
     val metaData = MetaDataUtils.layer(groupBy.metaData,
-                                       "backfill",
-                                       groupBy.metaData.name + "__backfill",
+                                       "group_by",
+                                       groupBy.metaData.name + "__group_by",
                                        groupByTableDeps,
                                        Option(effectiveStepDays),
                                        Some(groupBy.metaData.outputTable))

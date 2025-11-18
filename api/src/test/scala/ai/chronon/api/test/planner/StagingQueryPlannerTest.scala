@@ -103,7 +103,7 @@ class StagingQueryPlannerTest extends AnyFlatSpec with Matchers {
     val plan = planner.buildPlan
 
     plan.terminalNodeNames.asScala should contain key ai.chronon.planner.Mode.BACKFILL
-    plan.terminalNodeNames.asScala(ai.chronon.planner.Mode.BACKFILL) should equal("testStagingQuery__backfill")
+    plan.terminalNodeNames.asScala(ai.chronon.planner.Mode.BACKFILL) should equal("testStagingQuery__staging")
   }
 
   it should "staging query planner should handle setups correctly" in {
@@ -136,7 +136,7 @@ class StagingQueryPlannerTest extends AnyFlatSpec with Matchers {
     plan.nodes.asScala should have size 1
     val node = plan.nodes.asScala.head
     node.metaData should not be null
-    node.metaData.name should equal("testStagingQuery__backfill")
+    node.metaData.name should equal("testStagingQuery__staging")
   }
 
   it should "staging query planner should produce same semantic hash with different executionInfo in metadata" in {

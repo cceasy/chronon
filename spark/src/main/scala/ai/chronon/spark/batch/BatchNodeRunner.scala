@@ -292,6 +292,12 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
       case NodeContent._Fields.MONOLITH_JOIN =>
         runMonolithJoin(metadata, conf.getMonolithJoin, range)
 
+      case NodeContent._Fields.UNION_JOIN =>
+        logger.info(s"Running union join for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        require(conf.getUnionJoin.isSetJoin, "UnionJoinNode must have a join set")
+        UnionJoin.computeJoinAndSave(conf.getUnionJoin.join, range)(tableUtils)
+        logger.info(s"Successfully completed union join for '${metadata.name}'")
+
       case NodeContent._Fields.SOURCE_WITH_FILTER =>
         logger.info(s"Running source with filter job for '${metadata.name}' for range: [${range.start}, ${range.end}]")
         new SourceJob(conf.getSourceWithFilter, metadata, dateRange)(tableUtils).run()

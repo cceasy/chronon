@@ -67,13 +67,13 @@ class ExternalSourceSensorUtilTest extends AnyFlatSpec with Matchers {
 
     // Verify metadata structure for purchases sensor
     val purchasesMeta = purchasesSensor.get.metaData
-    purchasesMeta.name should startWith("wait_for_sensor")
+    purchasesMeta.name should endWith("__sensor")
     purchasesMeta.executionInfo.tableDependencies should be(empty)
     purchasesMeta.executionInfo.outputTableInfo.table should equal("data.purchases")
 
     // Verify metadata structure for checkouts sensor
     val checkoutsMeta = checkoutsSensor.get.metaData
-    checkoutsMeta.name should startWith("wait_for_sensor")
+    checkoutsMeta.name should endWith("__sensor")
     checkoutsMeta.executionInfo.tableDependencies should be(empty)
     checkoutsMeta.executionInfo.outputTableInfo.table should equal("data.checkouts")
   }
@@ -167,8 +167,8 @@ class ExternalSourceSensorUtilTest extends AnyFlatSpec with Matchers {
     sensor1 should be(defined)
     sensor2 should be(defined)
 
-    sensor1.get.metaData.name should startWith("wait_for_sensor")
-    sensor2.get.metaData.name should startWith("wait_for_sensor")
+    sensor1.get.metaData.name should endWith("__sensor")
+    sensor2.get.metaData.name should endWith("__sensor")
 
     // Verify sensor names are unique
     val sensorNames = sensorNodes.map(_.metaData.name).toSet
@@ -210,7 +210,7 @@ class ExternalSourceSensorUtilTest extends AnyFlatSpec with Matchers {
       sensor.metaData.executionInfo.outputTableInfo.table should equal(expectedTable)
 
       // Sensor name should follow the expected pattern
-      sensor.metaData.name should startWith("wait_for_sensor")
+      sensor.metaData.name should endWith("__sensor")
 
       // Verify sensor inherits team and other metadata
       sensor.metaData.team should equal("sensor_test")

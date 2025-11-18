@@ -2,7 +2,7 @@ package ai.chronon.api.planner
 
 import ai.chronon.api.CollectionExtensions.JMapExtension
 import ai.chronon.api.ColumnExpression.getTimeExpression
-import ai.chronon.api.Extensions.{GroupByOps, JoinPartOps, SourceOps, StringOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinPartOps, MetadataOps, SourceOps, StringOps}
 import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.api.{JoinPart, _}
 
@@ -29,20 +29,17 @@ object RelevantLeftForJoinPart {
     table.split('.').last.sanitize
   }
 
-  private def nameWithoutTeam(metadata: MetaData): String = {
-    metadata.name.split('.').tail.mkString(".")
-  }
-
   def partTableName(join: Join, joinPart: ai.chronon.api.JoinPart): String = {
+
     val relevantLeft = relevantLeftCompute(join.left, joinPart)
     val rightMetadata = joinPart.groupBy.metaData
     val prefix = Option(joinPart.prefix).map(_.sanitize + "__").getOrElse("")
 
     // if gb & join are from the same team, we could skip the team name from output table name
     val groupByName = prefix + (if (rightMetadata.team == join.metaData.team) {
-                                  nameWithoutTeam(rightMetadata).sanitize
+                                  rightMetadata.nameWithoutTeamOrVersion.sanitize
                                 } else {
-                                  rightMetadata.name.sanitize
+                                  rightMetadata.nameWithoutVersion.sanitize
                                 })
 
     // TODO: add things here if we are updating the joining strategy and we need to compute tables differently
@@ -52,7 +49,7 @@ object RelevantLeftForJoinPart {
     // removing ns to keep the table name short, hash is enough to differentiate
     val leftTable = removeNamespace(relevantLeft.leftTable)
 
-    s"${groupByName}__${leftTable}__$combinedHash"
+    s"${groupByName}__${combinedHash}__join_part"
   }
 
   def fullPartTableName(join: Join, joinPart: JoinPart): String = {

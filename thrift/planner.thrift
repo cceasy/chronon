@@ -36,6 +36,10 @@ struct MonolithJoinNode {
     1: optional api.Join join
 }
 
+struct UnionJoinNode {
+    1: optional api.Join join
+}
+
 struct StagingQueryNode {
     2: optional api.StagingQuery stagingQuery
 }
@@ -81,6 +85,7 @@ union NodeContent {
     5: JoinDerivationNode joinDerivation
     7: MonolithJoinNode monolithJoin
     8: StagingQueryNode stagingQuery
+    9: UnionJoinNode unionJoin
 
     10: JoinMetadataUpload joinMetadataUpload
     11: ExternalSourceSensorNode externalSourceSensor

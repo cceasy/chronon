@@ -110,7 +110,7 @@ class ExternalSourceSensorIntegrationTest extends AnyFlatSpec with Matchers {
       sensor.metaData should not be null
 
       // Verify sensor metadata follows expected naming pattern
-      sensor.metaData.name should include("__sensor__backfill")
+      sensor.metaData.name should include("__sensor")
       sensor.metaData.name should include(stagingQuery.metaData.name)
 
       // Verify sensor has no table dependencies
@@ -219,7 +219,7 @@ class ExternalSourceSensorIntegrationTest extends AnyFlatSpec with Matchers {
 
         withClue(s"$plannerType planner sensor validation: ") {
           // Verify sensor follows consistent structure across all planners
-          sensor.metaData.name should fullyMatch regex "wait_for_sensor.*"
+          sensor.metaData.name should fullyMatch regex ".*__sensor"
           sensor.metaData.executionInfo should not be null
           sensor.metaData.executionInfo.outputTableInfo should not be null
           sensor.metaData.executionInfo.outputTableInfo.table should not be empty
@@ -266,7 +266,7 @@ class ExternalSourceSensorIntegrationTest extends AnyFlatSpec with Matchers {
 
     // Verify each sensor has unique and correctly formatted metadata
     sensorNodes.foreach { sensor =>
-      sensor.metaData.name should startWith("wait_for_sensor")
+      sensor.metaData.name should endWith("__sensor")
       sensor.metaData.executionInfo.outputTableInfo.table should equal(sensor.sourceTableDependency.tableInfo.table)
       sensor.metaData.executionInfo.tableDependencies should be(empty)
     }
