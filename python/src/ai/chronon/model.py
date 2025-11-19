@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 import gen_thrift.api.ttypes as ttypes
 
 from ai.chronon import utils
+from ai.chronon.data_types import DataType, FieldsType
 from ai.chronon.utils import ANY_SOURCE_TYPE, normalize_source
 
 
@@ -50,6 +51,7 @@ def Model(
     inference_spec: Optional[InferenceSpec] = None,
     input_mapping: Optional[Dict[str, str]] = None,
     output_mapping: Optional[Dict[str, str]] = None,
+    value_fields: Optional[FieldsType] = None,
     output_namespace: Optional[str] = None,
     table_properties: Optional[Dict[str, str]] = None,
     tags: Optional[Dict[str, str]] = None,
@@ -69,6 +71,11 @@ def Model(
     :param output_mapping:
         Spark SQL queries to transform model output to desired output format
     :type output_mapping: Dict[str, str]
+    :param value_fields:
+        List of tuples of (field_name, DataType) defining the schema of the model's output values.
+        If provided, creates a STRUCT schema that will be set as the model's valueSchema.
+        Example: [('score', DataType.DOUBLE), ('category', DataType.STRING)]
+    :type value_fields: FieldsType
     :param output_namespace:
         Namespace for the model output
     :type output_namespace: str
@@ -102,12 +109,19 @@ def Model(
     if inference_spec:
         inference_spec_thrift = inference_spec.to_thrift()
 
+    # Create value schema if value_fields are provided
+    value_schema = None
+    if value_fields:
+        schema_name = "model_value_schema"
+        value_schema = DataType.STRUCT(schema_name, *value_fields)
+    
     # Create and return the Model object
     model = ttypes.Model(
         metaData=meta_data,
         inferenceSpec=inference_spec_thrift,
         inputMapping=input_mapping,
         outputMapping=output_mapping,
+        valueSchema=value_schema,
     )
 
     return model
@@ -123,6 +137,7 @@ def ModelTransforms(
     models: List[ttypes.Model],
     version: int,
     passthrough_fields: Optional[List[str]] = None,
+    key_fields: Optional[FieldsType] = None,
     output_namespace: Optional[str] = None,
     table_properties: Optional[Dict[str, str]] = None,
     tags: Optional[Dict[str, str]] = None,
@@ -138,6 +153,9 @@ def ModelTransforms(
      - sources: List of existing sources (Event/Entity/Join sources) to be enriched with model outputs
      - models: List of Model objects that will be used for inference on the source data
      - passthrough_fields: Fields from the source that we want to passthrough alongside the model outputs
+    - key_fields: List of tuples of (field_name, DataType) defining the schema of the key fields.
+        If provided, creates a STRUCT schema that will be set as the ModelTransforms' keySchema.
+        Example: [('user_id', DataType.STRING), ('session_id', DataType.STRING)]
      - output_namespace: Namespace for the model output
      - table_properties: Additional table properties for the model output
      - tags: Additional metadata tags
@@ -157,11 +175,18 @@ def ModelTransforms(
         version=str(version),
     )
     
+    # Create key schema if key_fields are provided
+    key_schema = None
+    if key_fields:
+        schema_name = "modeltransform_key_schema"
+        key_schema = DataType.STRUCT(schema_name, *key_fields)
+
     model_transforms = ttypes.ModelTransforms(
         sources=normalized_sources,
         models=models,
         passthroughFields=passthrough_fields,
         metaData=meta_data,
+        keySchema=key_schema,
     )
     
     # Add the table property for output table name generation

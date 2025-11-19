@@ -462,7 +462,8 @@ object Builders {
         metaData: MetaData = null,
         inferenceSpec: InferenceSpec = null,
         inputMapping: Map[String, String] = null,
-        outputMapping: Map[String, String] = null
+        outputMapping: Map[String, String] = null,
+        valueSchema: TDataType = null
     ): Model = {
       val result = new Model()
       if (metaData != null)
@@ -473,6 +474,8 @@ object Builders {
         result.setInputMapping(inputMapping.toJava)
       if (outputMapping != null)
         result.setOutputMapping(outputMapping.toJava)
+      if (valueSchema != null)
+        result.setValueSchema(valueSchema)
       result
     }
   }
@@ -498,7 +501,8 @@ object Builders {
         sources: Seq[Source] = null,
         models: Seq[Model] = null,
         passthroughFields: Seq[String] = null,
-        metaData: MetaData = null
+        metaData: MetaData = null,
+        keySchema: TDataType = null
     ): ModelTransforms = {
       val result = new ModelTransforms()
       if (sources != null)
@@ -509,6 +513,8 @@ object Builders {
         result.setPassthroughFields(passthroughFields.toJava)
       if (metaData != null)
         result.setMetaData(metaData)
+      if (keySchema != null)
+        result.setKeySchema(keySchema)
       result
     }
   }
