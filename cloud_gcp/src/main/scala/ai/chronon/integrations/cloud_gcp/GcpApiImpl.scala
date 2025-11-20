@@ -1,5 +1,6 @@
 package ai.chronon.integrations.cloud_gcp
 
+import ai.chronon.api.ModelBackend
 import ai.chronon.online._
 import ai.chronon.online.serde.{AvroConversions, AvroSerDe, SerDe}
 import com.google.api.gax.core.{InstantiatingExecutorProvider, NoCredentialsProvider}
@@ -11,9 +12,10 @@ import com.google.cloud.bigtable.data.v2.{BigtableDataClient, BigtableDataSettin
 
 import java.time.Duration
 import java.util
-import java.util.concurrent.ThreadFactory
+import java.util.concurrent.{ConcurrentHashMap, ThreadFactory}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 import java.util.function.Consumer
+import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
 class GcpApiImpl(conf: Map[String, String]) extends Api(conf) {
@@ -291,12 +293,41 @@ class GcpApiImpl(conf: Map[String, String]) extends Api(conf) {
 
   override def externalRegistry: ExternalSourceRegistry = registry
 
+  override def generateModelPlatformProvider: ModelPlatformProvider = {
+    // TODO - in a followup, we can extend to support multiple model platforms which need not be GCP based (e.g. OpenAI)
+    new ModelPlatformProvider {
+      override def getPlatform(modelBackend: ModelBackend, backendParams: Map[String, String]): ModelPlatform = {
+        modelBackend match {
+          case ModelBackend.VertexAI =>
+            // Get configuration once and reuse it
+            val projectId = getOrElseThrow(GcpProjectId, conf)
+            val location = getOrElseThrow(GcpLocation, conf)
+            val cacheKey = s"VertexAI:$projectId:$location"
+
+            Option(modelPlatformCache.get(cacheKey)) match {
+              case Some(existingPlatform) =>
+                existingPlatform
+              case None =>
+                implicit val ec: ExecutionContext = metrics.FlexibleExecutionContext.buildExecutionContext
+                val newPlatform = new VertexPlatform(projectId, location)
+
+                val existingPlatform = modelPlatformCache.putIfAbsent(cacheKey, newPlatform)
+                if (existingPlatform != null) existingPlatform else newPlatform
+            }
+          case _ =>
+            throw new UnsupportedOperationException(s"Model backend $modelBackend is not supported by GcpApiImpl")
+        }
+      }
+    }
+  }
+
   override def logResponse(resp: LoggableResponse): Unit = responseConsumer.accept(resp)
 }
 
 object GcpApiImpl {
 
   private[cloud_gcp] val GcpProjectId = "GCP_PROJECT_ID"
+  private[cloud_gcp] val GcpLocation = "GCP_LOCATION"
   private[cloud_gcp] val GcpBigTableInstanceId = "GCP_BIGTABLE_INSTANCE_ID"
   private[cloud_gcp] val GcpBigTableAppProfileId = "GCP_BIGTABLE_APP_PROFILE_ID"
   private[cloud_gcp] val EnableUploadClients = "ENABLE_UPLOAD_CLIENTS"
@@ -322,6 +353,8 @@ object GcpApiImpl {
 
   private val sharedDataQualityKvStore = new AtomicReference[KVStore]()
   private val dataQualityKvStoreLock = new Object()
+
+  private val modelPlatformCache = new ConcurrentHashMap[String, ModelPlatform]()
 
   private[cloud_gcp] def getOptional(key: String, conf: Map[String, String]): Option[String] =
     sys.env

@@ -38,6 +38,8 @@ object Metrics {
     val MetaDataFetching = "metadata.fetch"
     val JoinFetching = "join.fetch"
     val JoinSchemaFetching = "join.schema.fetch"
+    val ModelTransformsFetching = "modeltransforms.fetch"
+    val ModelPredict = "model.predict"
     val GroupByFetching = "group_by.fetch"
     val GroupByUpload = "group_by.upload"
     val GroupByStreaming = "group_by.streaming"

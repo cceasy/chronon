@@ -18,7 +18,7 @@ package ai.chronon.online.fetcher
 
 import ai.chronon.api
 import ai.chronon.api.Constants.UTF8
-import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, StringOps, ThrowableOps}
+import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, ModelTransformsOps, StringOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.OnlineDerivationUtil.applyDeriveFunc
 import ai.chronon.online._
@@ -155,6 +155,7 @@ class Fetcher(val kvStore: KVStore,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false,
               val externalSourceRegistry: ExternalSourceRegistry = null,
+              val modelPlatformProvider: ModelPlatformProvider = null,
               callerName: String = null,
               flagStore: FlagStore = null,
               disableErrorThrows: Boolean = false,
@@ -230,6 +231,79 @@ class Fetcher(val kvStore: KVStore,
 
     combinedResponsesF
       .map(_.iterator.map(logResponse(_, ts)).toSeq)
+  }
+
+  def fetchModelTransforms(requests: Seq[Request],
+                           modelTransformsConf: Option[api.ModelTransforms] = None): Future[Seq[Response]] = {
+    val modelTransformsFetcher = new ModelTransformsFetcher(modelPlatformProvider, debug)
+
+    modelTransformsConf match {
+      case Some(modelTransforms) =>
+        fetchModelTransformsWithConf(requests, modelTransforms, modelTransformsFetcher)
+
+      case None =>
+        // Track original indices to maintain order
+        val indexedRequests = requests.zipWithIndex
+        val groupedByModelTransforms = indexedRequests.groupBy { case (req, _) => req.name }
+
+        // Process each model transforms group
+        val futuresWithIndices = groupedByModelTransforms.map { case (modelTransformsName, requestsWithIndices) =>
+          val requestsOnly = requestsWithIndices.map(_._1)
+          val indices = requestsWithIndices.map(_._2)
+
+          // Look up the ModelTransforms conf from metadata store
+          val modelTransformsConfTry = metadataStore.getModelTransformsConf(modelTransformsName)
+
+          modelTransformsConfTry match {
+            case Success(modelTransforms) =>
+              val responseFuture = fetchModelTransformsWithConf(requestsOnly, modelTransforms, modelTransformsFetcher)
+              // Pair responses with their original indices
+              responseFuture.map(responses => responses.zip(indices))
+
+            case Failure(exception) =>
+              // Failed to fetch model transforms conf - refresh cache and return failure responses
+              metadataStore.getModelTransformsConf.refresh(modelTransformsName)
+              val failedResponses = requestsWithIndices.map { case (req, idx) =>
+                (Response(
+                   req,
+                   Failure(
+                     new IllegalArgumentException(
+                       s"Failed to fetch model transforms conf for $modelTransformsName. Please ensure metadata upload succeeded.",
+                       exception))
+                 ),
+                 idx)
+              }
+              Future.successful(failedResponses)
+          }
+        }
+
+        // Combine all futures and reorder by original index
+        Future.sequence(futuresWithIndices).map { allResponsesWithIndices =>
+          val flattened = allResponsesWithIndices.flatten.toSeq
+          val sortedByIndex = flattened.sortBy(_._2)
+          sortedByIndex.map(_._1)
+        }
+    }
+  }
+
+  private def fetchModelTransformsWithConf(requests: Seq[Request],
+                                           modelTransforms: api.ModelTransforms,
+                                           modelTransformsFetcher: ModelTransformsFetcher): Future[Seq[Response]] = {
+    val maybeJoinSource = modelTransforms.joinSource
+
+    if (maybeJoinSource.nonEmpty) {
+      val join = maybeJoinSource.get.join
+      val joinRequests = requests.map { request =>
+        Request(join.metaData.name, request.keys, request.atMillis, request.context)
+      }
+
+      val joinFuture = fetchJoin(joinRequests, Some(join))
+      joinFuture.flatMap { joinResponses =>
+        modelTransformsFetcher.fetchJoinSourceModelTransforms(requests, modelTransforms, joinResponses)
+      }
+    } else {
+      modelTransformsFetcher.fetchModelTransforms(requests, modelTransforms)
+    }
   }
 
   private def convertJoinFeaturesResponseToAvroBytes(features: Map[String, AnyRef],

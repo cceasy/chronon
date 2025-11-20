@@ -54,7 +54,7 @@ item_img_model = Model(
         "instance": "named_struct('image', named_struct('gcsUri', listing_id_main_image_path), 'text','')",
     },
     output_mapping={
-         "image_embedding": "predictions[0].imageEmbedding"
+         "image_embedding": "imageEmbedding"
     },
     # captures the schema of the model output as documented in (differs from the text embedding response):
     # https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-multimodal-embeddings

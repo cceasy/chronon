@@ -40,15 +40,15 @@ public class JavaFetcher {
   Fetcher fetcher;
 
   public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, Boolean disableErrorThrows) {
-    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, null, disableErrorThrows, null);
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, callerName, null, disableErrorThrows, null);
   }
 
   public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
-    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, null, false, null);
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, null, null, false, null);
   }
 
-  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, FlagStore flagStore, Boolean disableErrorThrows) {
-    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore, disableErrorThrows, null);
+  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, ModelPlatformProvider modelPlatformProvider, String callerName, FlagStore flagStore, Boolean disableErrorThrows) {
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, modelPlatformProvider, callerName, flagStore, disableErrorThrows, null);
   }
 
     /* user builder pattern to create JavaFetcher
@@ -66,6 +66,7 @@ public class JavaFetcher {
             builder.logFunc,
             builder.debug,
             builder.registry,
+            builder.modelPlatformProvider,
             builder.callerName,
             builder.flagStore,
             builder.disableErrorThrows,
@@ -83,6 +84,7 @@ public class JavaFetcher {
     private FlagStore flagStore;
     private Boolean disableErrorThrows;
     private ExecutionContext executionContextOverride;
+    private ModelPlatformProvider modelPlatformProvider;
 
     public Builder(KVStore kvStore, String metaDataSet, Long timeoutMillis,
                    Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
@@ -116,6 +118,11 @@ public class JavaFetcher {
     public Builder executionContextOverride(ExecutionContext executionContextOverride) {
       this.executionContextOverride = executionContextOverride;
       return this;
+    }
+
+    public Builder modelPlatformProvider(ModelPlatformProvider modelPlatformProvider) {
+        this.modelPlatformProvider = modelPlatformProvider;
+        return this;
     }
 
     public JavaFetcher build() {
@@ -184,6 +191,16 @@ public class JavaFetcher {
     Seq<Fetcher.Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
     // Get responses from the fetcher
       Future<FetcherResponseWithTs<Fetcher.ResponseV2>> scalaResponses = this.fetcher.withTs(this.fetcher.fetchJoinV2(scalaRequests, Option.empty(), FeaturesResponseType.AvroString()));
+    // Convert responses to CompletableFuture
+    return convertResponsesWithTs(scalaResponses, false, startTs);
+  }
+
+  public CompletableFuture<List<JavaResponse>> fetchModelTransforms(List<JavaRequest> requests) {
+    long startTs = System.currentTimeMillis();
+    // Convert java requests to scala requests
+    Seq<Fetcher.Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
+    // Get responses from the fetcher
+    Future<FetcherResponseWithTs<Fetcher.Response>> scalaResponses = this.fetcher.withTs(this.fetcher.fetchModelTransforms(scalaRequests, Option.empty()));
     // Convert responses to CompletableFuture
     return convertResponsesWithTs(scalaResponses, false, startTs);
   }

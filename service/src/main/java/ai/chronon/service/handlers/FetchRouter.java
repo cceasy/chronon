@@ -27,12 +27,20 @@ public class FetchRouter {
         }
     }
 
+    public static class ModelTransformsFetcherFunction implements BiFunction<JavaFetcher, List<JavaRequest>, CompletableFuture<List<JavaResponse>>> {
+        @Override
+        public CompletableFuture<List<JavaResponse>> apply(JavaFetcher fetcher, List<JavaRequest> requests) {
+            return fetcher.fetchModelTransforms(requests);
+        }
+    }
+
     public static Router createFetchRoutes(Vertx vertx, JavaFetcher fetcher) {
         Router router = Router.router(vertx);
         router.route().handler(BodyHandler.create());
 
         router.post("/groupby/:name").handler(new FetchHandler(fetcher, new GroupByFetcherFunction()));
         router.post("/join/:name").handler(new FetchHandler(fetcher, new JoinFetcherFunction()));
+        router.post("/modeltransforms/:name").handler(new FetchHandler(fetcher, new ModelTransformsFetcherFunction()));
 
         return router;
     }

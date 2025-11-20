@@ -518,4 +518,16 @@ object Builders {
       result
     }
   }
+
+  // Helper for creating schema types commonly used in testing
+  def structSchema(name: String, fields: (String, DataType)*): TDataType = {
+    val structFields = fields.map { case (fieldName, dataType) =>
+      new DataField().setName(fieldName).setDataType(toTDataType(dataType))
+    }
+
+    new TDataType(DataKind.STRUCT)
+      .setName(name)
+      .setParams(structFields.toList.toJava)
+  }
+
 }
