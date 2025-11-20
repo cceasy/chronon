@@ -374,6 +374,28 @@ jobs:
       - name: Clean up build artifacts
         run: rm -rf build_output
 
+  on_fail_notify_slack:
+    needs: [ promote-aws-candidate, promote-gcp-candidate, build_and_publish_docker ]
+    if: failure()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Failure Notification
+        uses: slackapi/slack-github-action@v1
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_TESTS_WEBHOOK_URL }}
+        with:
+          payload: |
+            {
+              "text": "Zipline CI Publish Release Failed\n\n Publishing the release failed for version <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|${{ env.VERSION }}>. Please check the logs for more details.",
+              "attachments": [
+                {
+                  "text": "",
+                  "color": "#ff0000"
+                }
+              ]
+            }
+
   clean_up_artifacts:
     permissions:
       id-token: write
