@@ -376,7 +376,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
       val missingPartitions = range.partitions.filterNot(p => allOutputTablePartitions.contains(p))
       logger.error(
         s"After job completion, output table ${metadata.executionInfo.outputTableInfo.table} is missing partitions: ${missingPartitions
-            .mkString(", ")} from the requested range: $range"
+            .mkString(", ")} from the requested range: $range. All output partitions: ${allOutputTablePartitions}"
       )
     }
 
