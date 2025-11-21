@@ -168,7 +168,10 @@ def StagingQuery(
                 spec_names.add(query_utils.normalize_table_name(d["spec"].split("/")[0]))
         mismatch = set(tables_in_query) - set(spec_names)
         if mismatch:
-            raise ValueError(f"Tables in query but not in dependencies: {mismatch}\nDependencies: {spec_names}\nTables in query: {tables_in_query}")
+            # There can be staging queries that run on top of views which are not handled as dependencies right now.
+            # So it's better to avoid this validation until views are handled for both Eval and / or Hub
+            # raise ValueError(f"Tables in query but not in dependencies: {mismatch}\nDependencies: {spec_names}\nTables in query: {tables_in_query}")
+            pass
 
 
     # Create execution info
