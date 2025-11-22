@@ -17,17 +17,18 @@
 package ai.chronon.api
 
 import java.nio.ByteBuffer
+import java.nio.charset.Charset
 import java.security.MessageDigest
 import java.util.Base64
 
 object HashUtils {
 
   def md5Base64(string: String): String = {
-    md5Base64(string.getBytes)
+    md5Base64(string.getBytes(Constants.UTF8))
   }
 
   def md5Hex(string: String): String = {
-    md5Bytes(string.getBytes).map("%02x".format(_)).mkString.take(6)
+    md5Bytes(string.getBytes(Constants.UTF8)).map("%02x".format(_)).mkString.take(6)
   }
 
   def md5Base64(bytes: Array[Byte]): String = {

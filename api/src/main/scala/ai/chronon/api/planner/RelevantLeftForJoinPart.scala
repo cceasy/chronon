@@ -4,6 +4,7 @@ import ai.chronon.api.CollectionExtensions.JMapExtension
 import ai.chronon.api.ColumnExpression.getTimeExpression
 import ai.chronon.api.Extensions.{GroupByOps, JoinPartOps, MetadataOps, SourceOps, StringOps}
 import ai.chronon.api.ScalaJavaConversions._
+import ai.chronon.api.ThriftJsonCodec.logger
 import ai.chronon.api.{JoinPart, _}
 
 // TODO(phase-2): This is not wired into the planner yet
@@ -44,7 +45,15 @@ object RelevantLeftForJoinPart {
 
     // TODO: add things here if we are updating the joining strategy and we need to compute tables differently
     val version = ""
+
     val combinedHash = HashUtils.md5Hex(relevantLeft.render + joinPart.groupBy.semanticHash + version).toLowerCase
+
+    logger.info(s"""
+         |Computing relevant left for GroupBy: ${joinPart.groupBy.metaData.cleanName},
+         |semantic_hash: ${joinPart.groupBy.semanticHash}
+         |left_query: ${relevantLeft.render}
+         |combined hash: $combinedHash
+         |""".stripMargin)
 
     // removing ns to keep the table name short, hash is enough to differentiate
     val leftTable = removeNamespace(relevantLeft.leftTable)
@@ -70,9 +79,12 @@ object RelevantLeftForJoinPart {
 
     // relevant left column computations for the right side
     // (adding new but unrelated selects to left source shouldn't affect these)
-    val leftKeyExpressions = joinPart.rightToLeft.map { case (rightKey, leftKey) =>
-      ColumnExpression(rightKey, leftQuery.getSelects.safeGet(leftKey))
-    }.toArray
+    val leftKeyExpressions = joinPart.rightToLeft
+      .map { case (rightKey, leftKey) =>
+        ColumnExpression(rightKey, leftQuery.getSelects.safeGet(leftKey))
+      }
+      .toArray
+      .sortBy(_.column)
 
     // time is only relevant if left is events
     val leftTimeExpression = left.dataModel match {
@@ -83,7 +95,7 @@ object RelevantLeftForJoinPart {
     val leftExpressions = leftKeyExpressions ++ leftTimeExpression
 
     // left filter clauses
-    val leftFilters: Array[String] = Option(leftQuery.getWheres).iterator.flatMap(_.toScala).toArray
+    val leftFilters: Array[String] = Option(leftQuery.getWheres).iterator.flatMap(_.toScala).toArray.sorted
 
     RelevantLeftForJoinPart(left.table, leftExpressions, leftFilters)
   }

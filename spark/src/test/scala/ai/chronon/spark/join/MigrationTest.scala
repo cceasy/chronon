@@ -22,8 +22,11 @@ import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.spark._
 import ai.chronon.spark.Extensions._
 import org.junit.Assert._
+import org.slf4j.LoggerFactory
 
 class MigrationTest extends BaseJoinTest {
+
+  private val logger = LoggerFactory.getLogger(getClass)
 
   it should "test migration" in {
     // Left
@@ -59,11 +62,12 @@ class MigrationTest extends BaseJoinTest {
       metaData = Builders.MetaData(name = "test.join_migration", namespace = namespace, team = "chronon")
     )
 
+    logger.info(s"${join.semanticHash}")
     // test older versions before migration
     // older versions do not have the bootstrap hash, but should not trigger recompute if no bootstrap_parts
     val productionHashV1 = Map(
-      "left_source" -> "0DVP4fhmG8",
-      "test_namespace_jointest.test_join_migration_user_unit_test_item_views" -> "J/Lqxs8k4t"
+      "left_source" -> "ln/C8wZYm9",
+      "test_namespace_jointest.test_join_migration_user_unit_test_item_views" -> "FJicEcrEwK"
     )
     assertEquals(0, join.tablesToDrop(productionHashV1).length)
 

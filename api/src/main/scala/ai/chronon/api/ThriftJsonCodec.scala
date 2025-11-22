@@ -24,9 +24,7 @@ import ai.chronon.api.thrift.TDeserializer
 import ai.chronon.api.thrift.TSerializer
 import ai.chronon.api.thrift.protocol.TCompactProtocol
 import ai.chronon.api.thrift.protocol.TSimpleJSONProtocol
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.{DeserializationFeature, JsonNode, ObjectMapper, SerializationFeature}
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -45,21 +43,50 @@ object ThriftJsonCodec {
     override def initialValue(): TSerializer = new TSerializer(new TSimpleJSONProtocol.Factory())
   }
 
+  private def serializer: TSerializer = serializerThreaded.get()
+
+  def toJsonNode[T <: TBase[_, _]: Manifest](obj: T): JsonNode = {
+    val jsonBytes = serializer.serialize(obj)
+    val jsonTree = mapper.readTree(jsonBytes)
+    sortJsonNode(jsonTree)
+  }
+
+  def toJsonStr[T <: TBase[_, _]: Manifest](obj: T): String = {
+    mapper.writeValueAsString(toJsonNode(obj))
+  }
+
   private val mapper = {
     val mapper = new ObjectMapper()
     mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+    mapper.configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+    mapper
   }
 
-  def serializer: TSerializer = serializerThreaded.get()
-
-  def toJsonStr[T <: TBase[_, _]: Manifest](obj: T): String = {
-    new String(serializer.serialize(obj), Constants.UTF8)
+  // Recursively sort all object keys in a JsonNode for canonical representation
+  private def sortJsonNode(node: JsonNode): JsonNode = {
+    if (node.isObject) {
+      val sorted = mapper.createObjectNode()
+      val fieldNames = new java.util.TreeSet[String]()
+      node.fieldNames().forEachRemaining(fieldNames.add)
+      fieldNames.forEach { fieldName =>
+        sorted.set(fieldName, sortJsonNode(node.get(fieldName)))
+      }
+      sorted
+    } else if (node.isArray) {
+      val sorted = mapper.createArrayNode()
+      node.elements().forEachRemaining { element =>
+        sorted.add(sortJsonNode(element))
+      }
+      sorted
+    } else {
+      node
+    }
   }
 
   def toJsonList[T <: TBase[_, _]: Manifest](obj: util.List[T]): String = {
     if (obj == null) return ""
     obj.toScala
-      .map(o => new String(serializer.serialize(o)))
+      .map(o => new String(toJsonStr(o)))
       .prettyInline
   }
 
@@ -73,8 +100,9 @@ object ThriftJsonCodec {
   }
 
   def hexDigest[T <: TBase[_, _]: Manifest](obj: T, length: Int = 6): String = {
-    // Get the MD5 hash bytes
-    md5Bytes(serializer.serialize(obj)).map("%02x".format(_)).mkString.take(length)
+    val jsonNode = toJsonNode(obj)
+    val canonicalBytes = mapper.writeValueAsBytes(jsonNode)
+    md5Bytes(canonicalBytes).map("%02x".format(_)).mkString.take(length)
   }
 
   def md5Digest[T <: TBase[_, _]: Manifest](obj: util.List[T]): String = {
@@ -95,13 +123,18 @@ object ThriftJsonCodec {
     }
   }
 
+  def jsonEquals(json1: String, json2: String): Boolean = {
+    val node1: JsonNode = mapper.readTree(json1)
+    val node2: JsonNode = mapper.readTree(json2)
+    sortJsonNode(node1).equals(sortJsonNode(node2))
+  }
+
   def fromJsonStr[T <: TBase[_, _]: Manifest](jsonStr: String, check: Boolean = true, clazz: Class[_ <: T]): T = {
     val obj: T = mapper.readValue(jsonStr, clazz)
     if (check) {
-      val inputNode: JsonNode = mapper.readTree(jsonStr)
-      val reSerializedInput: JsonNode = mapper.readTree(toJsonStr(obj))
+      val reserialized = toJsonStr(obj)
       require(
-        inputNode.equals(reSerializedInput),
+        jsonEquals(jsonStr, reserialized),
         message = s"""
                |Parsed Json object isn't reversible.
                |Original JSON String:
@@ -110,7 +143,7 @@ object ThriftJsonCodec {
                |-----------------------------------
                |JSON produced by serializing object:
                |
-               |$reSerializedInput
+               |$reserialized
                |------------------------------------
                |""".stripMargin
       )

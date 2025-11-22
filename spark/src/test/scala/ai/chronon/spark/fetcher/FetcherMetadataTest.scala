@@ -3,6 +3,7 @@ package ai.chronon.spark.fetcher
 import ai.chronon.api.Constants.MetadataDataset
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api.ScalaJavaConversions.IterableOps
+import ai.chronon.api.ThriftJsonCodec
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.fetcher.FetchContext
 import ai.chronon.online.{MetadataDirWalker, MetadataEndPoint, fetcher}
@@ -34,7 +35,7 @@ class FetcherMetadataTest extends SparkTestBase {
     val expected = {
       try src.mkString
       finally src.close()
-    }.replaceAll("\\s+", "")
+    }
 
     val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName)
     val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("FetcherTest")
@@ -55,7 +56,13 @@ class FetcherMetadataTest extends SparkTestBase {
     val res = Await.result(response, Duration.Inf)
     assertTrue(res.latest.isSuccess)
     val actual = new String(res.values.get.head.bytes)
-    assertEquals(expected, actual.replaceAll("\\s+", ""))
+
+    assertTrue(
+      s"""mismatched json
+         |- expected: $expected
+         |- actual:   $actual
+         |""".stripMargin,
+      ThriftJsonCodec.jsonEquals(expected, actual))
 
     val directoryDataSetDataSet = MetadataDataset + "_directory_test"
     val directoryMetadataStore =
@@ -73,7 +80,12 @@ class FetcherMetadataTest extends SparkTestBase {
     val dirRes = Await.result(dirResponse, Duration.Inf)
     assertTrue(dirRes.latest.isSuccess)
     val dirActual = new String(dirRes.values.get.head.bytes)
-    assertEquals(expected, dirActual.replaceAll("\\s+", ""))
+    assertTrue(
+      s"""mismatched json
+         |- expected: $expected
+         |- actual:   $dirActual
+         |""".stripMargin,
+      ThriftJsonCodec.jsonEquals(expected, dirActual))
 
     val emptyResponse =
       inMemoryKvStore.get(GetRequest("NoneExistKey".getBytes(), "NonExistDataSetName"))
