@@ -10,9 +10,10 @@ else
   echo "✅ Java 11 detected."
 fi
 
+OUT_DIR="out"
 ZIPLINE_VERSION="0.4.1"
 BUCKET="mlp-chronon-nonprod-sg"
-OUT_DIR="out"
+COPY_BUCKETS=("mlp-chronon-preprod-sg")
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -43,5 +44,10 @@ gcloud storage cp ${OUT_DIR}/cloud_gcp/assembly.dest/out.jar gs://${BUCKET}/rele
 gcloud storage cp ${OUT_DIR}/spark/assembly.dest/out.jar gs://${BUCKET}/release/${ZIPLINE_VERSION}/jars/spark_assembly_deploy.jar
 gcloud storage cp ${OUT_DIR}/flink/assembly.dest/out.jar gs://${BUCKET}/release/${ZIPLINE_VERSION}/jars/flink_assembly_deploy.jar
 gcloud storage cp ${OUT_DIR}/service/assembly.dest/out.jar gs://${BUCKET}/release/${ZIPLINE_VERSION}/jars/service_assembly_deploy.jar
+
+# Copy to other buckets
+for TARGET_BUCKET in "${COPY_BUCKETS[@]}"; do
+  gcloud storage cp -r gs://${BUCKET}/release/${ZIPLINE_VERSION}/jars gs://${TARGET_BUCKET}/release/${ZIPLINE_VERSION}/jars
+done
 
 gcloud storage ls -l --readable-sizes gs://${BUCKET}/release/${ZIPLINE_VERSION}/jars
