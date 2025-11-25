@@ -35,7 +35,6 @@ import java.util
 import scala.concurrent.Future
 import scala.util.Success
 import scala.util.Try
-import scala.collection.Seq
 
 object DynamoDBKVStoreConstants {
   // Read capacity units to configure DynamoDB table with

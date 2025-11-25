@@ -1,15 +1,19 @@
 package build.api
 
-import mill.*
+import mill.api._
 import mill.scalalib.*
 
-// Main API module
-object `package` extends build.BaseModule {
+// Main API module - supports both api.test AND api[2.13.17].test
+object `package` extends Cross[ApiModule](build.Constants.scalaVersions) with ApiModule {
+  override val crossValue = build.Constants.defaultScalaVersion
+}
+
+trait ApiModule extends Cross.Module[String] with build.BaseModule {
   
   // Thrift base classes module (ai.chronon.api.thrift package)
-  object thriftBase extends JavaModule {
+  object thriftBase extends JavaModule with mill.scalalib.PublishModule {
     def jvmId = build.Constants.jvmId
-    
+
     def sources = Task.Sources(moduleDir / os.up / "src" / "main" / "java" / "ai" / "chronon" / "api" / "thrift")
     def repositoriesTask = Task.Anon { super.repositoriesTask() ++ build.Constants.repositories }
     def mvnDeps = Seq(
@@ -17,19 +21,32 @@ object `package` extends build.BaseModule {
       mvn"org.slf4j:slf4j-api:1.7.36",
       mvn"org.apache.commons:commons-lang3:3.18.0"
     )
+
+    override def publishVersion = Task {
+      sys.env.getOrElse("CHRONON_VERSION", "0.0.32")
+    }
+
+    def pomSettings = build.Constants.pomSettingsFor("chronon-api-thrift-base")
   }
 
   // Generated Thrift Java classes module
-  object thriftJava extends JavaModule {
+  object thriftJava extends JavaModule with mill.scalalib.PublishModule {
     def jvmId = build.Constants.jvmId
-    
+
     def moduleDeps = Seq(thriftBase)
     def repositoriesTask = Task.Anon { super.repositoriesTask() ++ build.Constants.repositories }
     def mvnDeps = Seq(mvn"javax.annotation:javax.annotation-api:1.3.2")
-    
-    def generatedSources = Task { 
+
+    def generatedSources = Task {
       Seq(build.thrift.generateJavaThrift())
     }
+
+    override def publishVersion = Task {
+      sys.env.getOrElse("CHRONON_VERSION", "0.0.32")
+    }
+
+    def pomSettings = build.Constants.pomSettingsFor("chronon-api-thrift-java")
+
   }
   
   def moduleDeps = Seq(thriftJava)
@@ -43,7 +60,8 @@ object `package` extends build.BaseModule {
   )
   
   object test extends build.BaseTestModule {
-    def moduleDeps = Seq(build.api)
+    def scalaVersion = crossValue
+    def moduleDeps = Seq(build.api(crossValue))
     def mvnDeps = super.mvnDeps() ++ super.compileMvnDeps() ++ build.Constants.testDeps
   }
 

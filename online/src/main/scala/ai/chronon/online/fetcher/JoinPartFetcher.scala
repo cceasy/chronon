@@ -23,7 +23,6 @@ import ai.chronon.online.fetcher.Fetcher.{ColumnSpec, PrefixedRequest, Request, 
 import ai.chronon.online.fetcher.FetcherCache.BatchResponses
 import org.slf4j.{Logger, LoggerFactory}
 
-import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 

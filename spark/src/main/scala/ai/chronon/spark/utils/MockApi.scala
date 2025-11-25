@@ -16,23 +16,18 @@
 
 package ai.chronon.spark.utils
 
-import ai.chronon.api.Extensions.GroupByOps
-import ai.chronon.api.Extensions.SourceOps
+import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.ScalaJavaConversions._
+import ai.chronon.online._
 import ai.chronon.online.fetcher.Fetcher
 import ai.chronon.online.fetcher.Fetcher.Response
-import ai.chronon.online._
 import ai.chronon.online.serde._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
-import java.util
 import java.util.Base64
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentLinkedQueue
-import scala.collection.Seq
 import scala.concurrent.Future
 import scala.util.Success
 
@@ -50,7 +45,7 @@ class MockStreamBuilder extends StreamBuilder {
 
 class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
   class PlusOneExternalHandler extends ExternalSourceHandler {
-    override def fetch(requests: collection.Seq[Fetcher.Request]): Future[collection.Seq[Fetcher.Response]] = {
+    override def fetch(requests: scala.Seq[Fetcher.Request]): Future[scala.Seq[Fetcher.Response]] = {
       Future(
         requests.map(req =>
           Response(req,
@@ -58,45 +53,21 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
     }
   }
 
-  class AlwaysFailsHandler extends JavaExternalSourceHandler {
-    override def fetchJava(requests: util.List[JavaRequest]): CompletableFuture[util.List[JavaResponse]] = {
-      CompletableFuture.completedFuture[util.List[JavaResponse]](
-        requests
-          .iterator()
-          .toScala
-          .map(req =>
-            new JavaResponse(
-              req,
-              JTry.failure(
-                new RuntimeException("This handler always fails things")
-              )
-            ))
-          .toList
-          .toJava
+  class AlwaysFailsHandler extends ExternalSourceHandler {
+    override def fetch(requests: scala.Seq[Fetcher.Request]): Future[scala.Seq[Fetcher.Response]] = {
+      Future(
+        requests.map(req => Response(req, scala.util.Failure(new RuntimeException("This handler always fails things"))))
       )
     }
   }
 
-  class JavaPlusOneExternalHandler extends JavaExternalSourceHandler {
-    override def fetchJava(requests: util.List[JavaRequest]): CompletableFuture[util.List[JavaResponse]] = {
-      CompletableFuture.completedFuture(
-        requests
-          .iterator()
-          .toScala
-          .map { req =>
-            new JavaResponse(req,
-                             JTry.success(
-                               req.keys
-                                 .entrySet()
-                                 .iterator()
-                                 .toScala
-                                 .map(e => e.getKey -> (e.getValue.asInstanceOf[Integer] + 1).asInstanceOf[AnyRef])
-                                 .toMap
-                                 .toJava
-                             ))
-          }
-          .toSeq
-          .toJava)
+  class JavaPlusOneExternalHandler extends ExternalSourceHandler {
+    override def fetch(requests: scala.Seq[Fetcher.Request]): Future[scala.Seq[Fetcher.Response]] = {
+      Future(
+        requests.map(req =>
+          Response(req,
+                   Success(req.keys.mapValues(_.asInstanceOf[Integer] + 1).mapValues(_.asInstanceOf[AnyRef]).toMap)))
+      )
     }
   }
 

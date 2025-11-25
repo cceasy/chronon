@@ -31,7 +31,7 @@ import org.junit.Assert._
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
 
-import scala.collection.Seq
+
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Success}

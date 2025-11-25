@@ -1,10 +1,15 @@
 package build.cloud_aws
-import mill._
+import mill.api._
 import mill.scalalib._
 
-// Cloud AWS module
-object `package` extends build.BaseModule {
-  def moduleDeps = Seq(build.spark, build.aggregator, build.api, build.online)
+// Cloud AWS module - supports both cloud_aws.test AND cloud_aws[2.13.17].test
+object `package` extends Cross[CloudAwsModule](build.Constants.scalaVersions) with CloudAwsModule {
+  // Provide default scala version for bracket-free access
+  override val crossValue = build.Constants.defaultScalaVersion
+}
+
+trait CloudAwsModule extends Cross.Module[String] with build.BaseModule {
+  def moduleDeps = Seq(build.spark(crossValue), build.aggregator(crossValue), build.api(crossValue), build.online(crossValue))
 
   def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingApiDeps ++ build.Constants.utilityDeps ++ build.Constants.sparkDeps ++ Seq(
     mvn"software.amazon.awssdk:dynamodb:2.30.13",
@@ -20,8 +25,10 @@ object `package` extends build.BaseModule {
   )
   
   object test extends build.BaseTestModule {
-    def moduleDeps = Seq(build.cloud_aws, build.spark.test)
-    def mvnDeps = Seq(
+    def scalaVersion = crossValue
+
+    def moduleDeps = Seq(build.cloud_aws(crossValue), build.spark(crossValue).test)
+    def mvnDeps = super.mvnDeps() ++ Seq(
       mvn"org.testcontainers:testcontainers:1.19.3",
       mvn"org.testcontainers:junit-jupiter:1.19.3"
     )

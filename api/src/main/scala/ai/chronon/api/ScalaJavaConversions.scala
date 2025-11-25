@@ -1,7 +1,6 @@
 package ai.chronon.api
 
 import scala.jdk.CollectionConverters._
-import scala.collection.Seq
 
 object ScalaJavaConversions {
 

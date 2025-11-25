@@ -23,7 +23,6 @@ import org.apache.datasketches.kll.KllFloatsSketch
 import org.apache.datasketches.memory.Memory
 
 import java.util
-import scala.collection.Seq
 
 /** Module managing FeatureStats Schema, Aggregations to be used by type and aggregator construction.
   *

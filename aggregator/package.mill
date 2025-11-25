@@ -1,10 +1,14 @@
 package build.aggregator
-import mill._
+import mill.api._
 import mill.scalalib._
 
-// Aggregator module  
-object `package` extends build.BaseModule {
-  def moduleDeps = Seq(build.api)
+// Aggregator module - supports both aggregator.test AND aggregator[2.13.17].test
+object `package` extends Cross[AggregatorModule](build.Constants.scalaVersions) with AggregatorModule {
+  override val crossValue = build.Constants.defaultScalaVersion
+}
+
+trait AggregatorModule extends Cross.Module[String] with build.BaseModule {
+  def moduleDeps = Seq(build.api(crossValue))
 
   def compileMvnDeps = Seq(
     mvn"org.apache.spark::spark-sql:${build.Constants.sparkVersion}"
@@ -17,7 +21,8 @@ object `package` extends build.BaseModule {
   )
   
   object test extends build.BaseTestModule {
-    def moduleDeps = Seq(build.aggregator, build.api.test)
+    def scalaVersion = crossValue
+    def moduleDeps = Seq(build.aggregator(crossValue), build.api(crossValue).test)
     def mvnDeps = super.mvnDeps() ++ build.Constants.testDeps
   }
 }

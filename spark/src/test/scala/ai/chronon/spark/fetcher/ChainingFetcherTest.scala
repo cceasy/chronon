@@ -35,7 +35,7 @@ import org.slf4j.{Logger, LoggerFactory}
 
 import java.util.TimeZone
 import java.util.concurrent.Executors
-import scala.collection.Seq
+
 import scala.concurrent.ExecutionContext
 
 class ChainingFetcherTest extends SparkTestBase {

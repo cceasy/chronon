@@ -32,8 +32,7 @@ import org.apache.spark.sql.functions.{col, unbase64}
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.slf4j.{Logger, LoggerFactory}
 
-import java.util.Base64
-import scala.collection.{Seq, mutable}
+import scala.collection.mutable
 import scala.util.{Failure, Success, Try}
 
 /** Purpose of LogFlattenerJob is to unpack serialized Avro data from online requests and flatten each field

@@ -9,7 +9,6 @@ import ai.chronon.online.fetcher.FetcherCache.{BatchResponses, CachedBatchRespon
 import ai.chronon.online._
 import org.slf4j.{Logger, LoggerFactory}
 
-import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 

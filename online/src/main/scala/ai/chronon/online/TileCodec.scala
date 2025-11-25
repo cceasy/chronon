@@ -29,7 +29,7 @@ import ai.chronon.online.serde._
 import org.apache.avro.generic.GenericData
 
 import scala.collection.JavaConverters._
-import scala.collection.{Seq, mutable}
+import scala.collection.mutable
 
 object TileCodec {
   def buildRowAggregator(groupBy: GroupBy, inputSchema: Seq[(String, DataType)]): RowAggregator = {
@@ -37,7 +37,7 @@ object TileCodec {
     // feature column aggregations to be computed. We don't include windows in this
     // to keep the aggregation work & payload size small as the multiple windows for a given
     // counter are identical value wise within a tile (e.g. sum_1d and sum_7d are the same in a tile)
-    val unpackedAggs = groupBy.aggregations.asScala.flatMap(_.unWindowed)
+    val unpackedAggs = groupBy.aggregations.asScala.flatMap(_.unWindowed).toSeq
     new RowAggregator(inputSchema, unpackedAggs)
   }
 
@@ -46,7 +46,7 @@ object TileCodec {
     // feature column aggregations to be computed. This version includes windows in the feature
     // columns to get the full cross product (buckets * windows) as this is useful in unit tests to compare
     // the final results
-    val unpackedAggs = groupBy.aggregations.asScala.flatMap(_.unpack)
+    val unpackedAggs = groupBy.aggregations.asScala.flatMap(_.unpack).toSeq
     new RowAggregator(inputSchema, unpackedAggs)
   }
 }

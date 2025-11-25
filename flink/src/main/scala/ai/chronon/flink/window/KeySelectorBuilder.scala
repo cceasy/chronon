@@ -7,7 +7,6 @@ import org.apache.flink.api.java.functions.KeySelector
 import org.slf4j.LoggerFactory
 
 import java.util
-import scala.collection.Seq
 
 /** A KeySelector is what Flink uses to determine how to partition a DataStream. In a distributed environment, the
   * KeySelector guarantees that events with the same key always end up in the same machine.

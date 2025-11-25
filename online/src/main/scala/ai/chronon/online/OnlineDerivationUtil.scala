@@ -8,8 +8,6 @@ import ai.chronon.api.StructField
 import ai.chronon.api.StructType
 import ai.chronon.online.fetcher.Fetcher
 
-import scala.collection.Seq
-
 object OnlineDerivationUtil {
   type DerivationFunc = (Map[String, Any], Map[String, Any]) => Map[String, Any]
 

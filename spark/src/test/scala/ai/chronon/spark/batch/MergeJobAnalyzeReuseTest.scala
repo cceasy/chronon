@@ -22,7 +22,7 @@ import org.apache.spark.sql.{SaveMode, Row => SparkRow}
 import org.junit.Assert._
 
 import scala.collection.JavaConverters._
-import scala.collection.Seq
+
 
 class MergeJobAnalyzeReuseTest extends SparkTestBase {
 

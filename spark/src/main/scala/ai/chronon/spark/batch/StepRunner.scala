@@ -5,8 +5,6 @@ import ai.chronon.api.{DateRange, MetaData, PartitionRange, PartitionSpec}
 import ai.chronon.spark.catalog.TableUtils
 import org.slf4j.{Logger, LoggerFactory}
 
-import scala.collection.Seq
-
 case class StepRunner(
     tableName: String,
     producePartitionsFunc: DateRange => Unit,

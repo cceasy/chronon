@@ -147,7 +147,13 @@ class HeterogeneousPartitionColumnsTest extends BaseJoinTest {
       metaData = Builders.MetaData(name = "test.item_hetero_features", namespace = namespace, team = "chronon")
     )
 
-    val join = new ai.chronon.spark.Join(joinConf = joinConf, endPartition = "2025-05-08", tableUtils = tableUtils)
+    // Use a dynamic end partition that's within the generated data range
+    // Start is threeDaysAgo - 200 days, so use a date that's within the data range
+    val endPartitionDate = tableUtils.partitionSpec.minus(threeDaysAgo, new Window(100, TimeUnit.DAYS))
+    val leftEndFormatSpec = tableUtils.partitionSpec.copy(column = leftCustomPartitionCol, format = leftCustomFormat)
+    val endPartition = leftEndFormatSpec.at(tableUtils.partitionSpec.epochMillis(endPartitionDate))
+
+    val join = new ai.chronon.spark.Join(joinConf = joinConf, endPartition = endPartition, tableUtils = tableUtils)
     val computed = join.computeJoin()
     assert(computed.collect().nonEmpty)
   }

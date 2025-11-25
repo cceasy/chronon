@@ -1,7 +1,7 @@
 package ai.chronon.flink.test.deser
 
 import ai.chronon.api.{Accuracy, Builders, GroupBy}
-import ai.chronon.flink.deser.{DeserializationSchemaBuilder, ProjectedEvent, SourceProjectionDeserializationSchema}
+import ai.chronon.flink.deser.{DeserializationSchemaBuilder, ProjectedEvent}
 import ai.chronon.online.serde.{AvroCodec, AvroSerDe}
 import org.apache.avro.Schema
 import org.apache.avro.generic.{GenericData, GenericRecord}
@@ -72,7 +72,7 @@ class CatalystUtilComplexAvroTest extends AnyFlatSpec {
 
     deserSchema.deserialize(payloadBytes, listCollector)
 
-    resultList.asScala.map(_.fields)
+    resultList.asScala.toSeq.map(_.fields)
   }
 
   private def validateQueryResults(result: Seq[Map[String, Any]],

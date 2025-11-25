@@ -7,7 +7,6 @@ import ai.chronon.planner
 import ai.chronon.planner._
 
 import scala.collection.JavaConverters._
-import scala.collection.Seq
 import scala.language.{implicitConversions, reflectiveCalls}
 
 class JoinPlanner(join: Join)(implicit outputPartitionSpec: PartitionSpec)

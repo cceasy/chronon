@@ -33,7 +33,6 @@ import java.util.Collections
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContextExecutor
 import scala.concurrent.Future
-import scala.collection.Seq
 
 case class E2ETestEvent(id: String, int_val: Int, double_val: Double, created: Long)
 case class E2ETestMutationEvent(id: String,

@@ -115,7 +115,7 @@ object JoinSourceQueryFunction {
 
     val timeColumnMapping = Map(Constants.TimeColumn -> timeColumn) // Add ts -> timeColumn mapping
     val selectsWithTimeColumn = (rawSelects ++ timeColumnMapping).toSeq
-    val wheres = Option(joinSource.query.wheres).map(_.asScala).getOrElse(Seq.empty)
+    val wheres = Option(joinSource.query.wheres).map(_.asScala.toSeq).getOrElse(Seq.empty)
 
     // Create CatalystUtil instance
     val catalystUtil = new CatalystUtil(joinSchema, selectsWithTimeColumn, wheres)

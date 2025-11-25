@@ -31,12 +31,11 @@ import java.util.stream.Collectors;
 //  scala.collection.immutable.Map  -> java.util.Map
 //  scala.collection.immutable.List -> java.util.List
 //  scala.concurrent.Future         -> java.util.concurrent.CompletableFuture
-public abstract class JavaExternalSourceHandler extends ExternalSourceHandler {
+public abstract class JavaExternalSourceHandler implements ExternalSourceHandler {
 
     //java friendly method
     public abstract CompletableFuture<java.util.List<JavaResponse>> fetchJava(java.util.List<JavaRequest> requests);
 
-    @Override
     public Future<Seq<Fetcher.Response>> fetch(Seq<Fetcher.Request> requests) {
         // TODO: deprecate ScalaVersionSpecificCollectionsConverter in java
         java.util.List<JavaRequest> javaRequests = ScalaJavaConversions.toJava(requests.toList())

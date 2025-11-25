@@ -25,8 +25,6 @@ import ai.chronon.online.OnlineDerivationUtil.{DerivationFunc, buildDerivationFu
 import ai.chronon.online.serde._
 import org.apache.avro.Schema
 
-import scala.collection.Seq
-
 // mixin class - with schema
 class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo)
     extends GroupByServingInfo(groupByServingInfo)

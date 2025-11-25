@@ -20,7 +20,6 @@ import ai.chronon.spark.catalog.TableUtils
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.JavaConverters._
-import scala.collection.Seq
 
 /** ModularMonolith orchestrates the join pipeline using discrete job classes from an api.Join object:
   * SourceJob -> JoinBootstrapJob -> JoinPartJob(s) -> MergeJob -> JoinDerivationJob

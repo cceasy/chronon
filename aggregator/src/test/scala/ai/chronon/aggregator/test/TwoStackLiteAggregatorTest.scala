@@ -35,7 +35,6 @@ import com.google.gson.Gson
 import org.junit.Assert._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import scala.collection.Seq
 
 class TwoStackLiteAggregatorTest extends AnyFlatSpec {
   it should "buffer with top k" in {

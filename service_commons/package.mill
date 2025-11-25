@@ -1,10 +1,14 @@
 package build.service_commons
-import mill._
+import mill.api._
 import mill.scalalib._
 
-// Service Commons module (shared service utilities)
-object `package` extends build.BaseModule {
-  def moduleDeps = Seq(build.api, build.online)
+// Service Commons module (shared service utilities) - supports both service_commons.test AND service_commons[2.13.17].test
+object `package` extends Cross[ServiceCommonsModule](build.Constants.scalaVersions) with ServiceCommonsModule {
+  override val crossValue = build.Constants.defaultScalaVersion
+}
+
+trait ServiceCommonsModule extends Cross.Module[String] with build.BaseModule {
+  def moduleDeps = Seq(build.api(crossValue), build.online(crossValue))
 
   def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingApiDeps ++ build.Constants.utilityDeps ++ Seq(
     mvn"io.vertx:vertx-core:4.5.22",
@@ -17,8 +21,8 @@ object `package` extends build.BaseModule {
   )
   
   object test extends build.BaseJUnitTestModule {
-    def moduleDeps = Seq(build.service_commons, build.api)
-    def mvnDeps = Seq(
+    def moduleDeps = Seq(build.service_commons(crossValue), build.api(crossValue))
+    def mvnDeps = super.mvnDeps() ++ Seq(
       mvn"org.junit.jupiter:junit-jupiter:5.10.2",
       mvn"org.junit.jupiter:junit-jupiter-api:5.10.2",
       mvn"org.junit.jupiter:junit-jupiter-engine:5.10.2",

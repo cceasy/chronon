@@ -63,7 +63,7 @@ class GroupBy(inputStream: DataFrame,
     }
     val keys = groupByConf.getKeyColumns.asScala
 
-    val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String])
+    val baseWheres = Option(query.wheres).map(_.asScala.toSeq).getOrElse(Seq.empty[String])
     val selectMap = Option(selects).getOrElse(Map.empty[String, String])
     val keyWhereOption = keys
       .map { key =>
@@ -77,7 +77,7 @@ class GroupBy(inputStream: DataFrame,
     QueryUtils.build(
       selects,
       inputTable,
-      baseWheres ++ timeWheres :+ s"($keyWhereOption)",
+      baseWheres ++ timeWheres ++ Seq(s"($keyWhereOption)"),
       fillIfAbsent = if (selects == null) None else fillIfAbsent
     )
   }

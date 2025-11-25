@@ -17,7 +17,6 @@ import org.apache.spark.sql.types.StructType
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import scala.collection.Seq
 import scala.jdk.CollectionConverters._
 
 /** Core utility class for Spark expression evaluation that can be reused across different Flink operators.
@@ -78,7 +77,7 @@ class SparkExpressionEval[EventType](encoder: Encoder[EventType],
     exprEvalErrorCounter = metricsGroup.counter("spark_expr_eval_errors")
 
     // Initialize CatalystUtil without acquiring session reference
-    val setups = Option(query.setups).map(_.asScala).getOrElse(Seq.empty)
+    val setups = Option(query.setups).map(_.asScala.toSeq).getOrElse(Seq.empty)
     catalystUtil = new CatalystUtil(chrononSchema, transforms, filters, setups)
   }
 
@@ -113,7 +112,7 @@ class SparkExpressionEval[EventType](encoder: Encoder[EventType],
   }
 
   def getOutputSchema: StructType = {
-    val setups = Option(query.setups).map(_.asScala).getOrElse(Seq.empty)
+    val setups = Option(query.setups).map(_.asScala.toSeq).getOrElse(Seq.empty)
     new CatalystUtil(chrononSchema, transforms, filters, setups).getOutputSparkSchema
   }
 

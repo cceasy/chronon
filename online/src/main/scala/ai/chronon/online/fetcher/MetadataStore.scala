@@ -30,7 +30,7 @@ import org.slf4j.{Logger, LoggerFactory}
 
 import java.nio.charset.StandardCharsets
 import scala.collection.immutable.SortedMap
-import scala.collection.{Seq, mutable}
+import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future}
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
@@ -209,7 +209,7 @@ class MetadataStore(fetchContext: FetchContext) {
           context
             .withSuffix("join_list")
             .distribution(metrics.Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
-          Future.successful(newAcc)
+          Future.successful(newAcc.toSeq)
         }
       }
     }

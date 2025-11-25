@@ -64,7 +64,8 @@ class ModelTransformsFetcher(modelPlatformProvider: ModelPlatformProvider, debug
     }
   }
 
-  def fetchModelTransforms(requests: Seq[Request], modelTransforms: api.ModelTransforms): Future[Seq[Response]] = {
+  def fetchModelTransforms(requests: scala.Seq[Request],
+                           modelTransforms: api.ModelTransforms): Future[scala.Seq[Response]] = {
     if (requests.isEmpty) {
       return Future.successful(Seq.empty)
     }
@@ -267,7 +268,7 @@ class ModelTransformsFetcher(modelPlatformProvider: ModelPlatformProvider, debug
     val results = pooledCatalyst.performSql(data.asInstanceOf[Map[String, Any]])
 
     if (results.nonEmpty) {
-      results.head.mapValues(_.asInstanceOf[AnyRef])
+      results.head.map { case (k, v) => k -> v.asInstanceOf[AnyRef] }
     } else {
       Map.empty[String, AnyRef]
     }
@@ -277,7 +278,7 @@ class ModelTransformsFetcher(modelPlatformProvider: ModelPlatformProvider, debug
                                        passthroughFields: java.util.List[String]): Map[String, AnyRef] = {
     if (passthroughFields != null && !passthroughFields.isEmpty) {
       val fieldsToPassthrough = passthroughFields.asScala.toSet
-      baseData.filterKeys(fieldsToPassthrough.contains)
+      baseData.filter { case (k, _) => fieldsToPassthrough.contains(k) }
     } else {
       Map.empty[String, AnyRef]
     }

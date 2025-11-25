@@ -28,7 +28,7 @@ import org.apache.spark.sql.types.{StringType, StructType}
 import org.slf4j.{Logger, LoggerFactory}
 import ai.chronon.spark.catalog.TableUtils
 
-import scala.collection.{Seq, immutable, mutable}
+import scala.collection.{immutable, mutable}
 import scala.util.Try
 
 case class JoinPartMetadata(

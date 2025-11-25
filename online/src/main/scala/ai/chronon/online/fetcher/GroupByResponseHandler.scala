@@ -15,7 +15,6 @@ import org.slf4j.{Logger, LoggerFactory}
 
 import java.util
 import scala.util.{Failure, Success, Try}
-import scala.collection.Seq
 
 class GroupByResponseHandler(fetchContext: FetchContext, metadataStore: MetadataStore) extends FetcherCache {
 

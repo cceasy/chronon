@@ -48,7 +48,7 @@ class InMemoryKvStore(tableUtils: () => TableUtils, hardFailureOnInvalidDataset:
   @transient lazy val encoder: Base64.Encoder = Base64.getEncoder
   def encode(bytes: Array[Byte]): String = encoder.encodeToString(bytes)
   def toStr(bytes: Array[Byte]): String = new String(bytes, Constants.UTF8)
-  override def multiGet(requests: collection.Seq[KVStore.GetRequest]): Future[collection.Seq[KVStore.GetResponse]] = {
+  override def multiGet(requests: scala.Seq[KVStore.GetRequest]): Future[scala.Seq[KVStore.GetResponse]] = {
     Future {
       // emulate IO latency
       Thread.sleep(4)
@@ -69,7 +69,7 @@ class InMemoryKvStore(tableUtils: () => TableUtils, hardFailureOnInvalidDataset:
                 req.startTsMillis.forall(version >= _) && req.endTsMillis.forall(version <= _)
               } // filter version
               .map { case (version, bytes) => TimedValue(bytes, version) }
-        }
+        }.map(_.toSeq)
         KVStore.GetResponse(req, values)
       }
     }
@@ -86,7 +86,7 @@ class InMemoryKvStore(tableUtils: () => TableUtils, hardFailureOnInvalidDataset:
       }
     }
 
-  override def multiPut(putRequests: collection.Seq[KVStore.PutRequest]): Future[collection.Seq[Boolean]] = {
+  override def multiPut(putRequests: scala.Seq[KVStore.PutRequest]): Future[scala.Seq[Boolean]] = {
     val result = putRequests.map { case PutRequest(keyBytes, valueBytes, dataset, millis) =>
       val table = database.get(dataset)
       val key = encode(keyBytes)

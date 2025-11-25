@@ -24,7 +24,6 @@ import org.rogach.scallop.{ScallopConf, ScallopOption, Serialization}
 import org.slf4j.{Logger, LoggerFactory}
 
 import java.time.Duration
-import scala.collection.Seq
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 /** Base abstract class for all Flink streaming jobs in Chronon.

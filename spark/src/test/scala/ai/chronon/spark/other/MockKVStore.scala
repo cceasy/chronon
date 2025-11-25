@@ -4,7 +4,7 @@ import ai.chronon.online.KVStore
 
 import scala.collection.mutable
 import scala.concurrent.Future
-import scala.collection.Seq
+
 
 class MockKVStore() extends KVStore with Serializable {
   val num_puts: mutable.Map[String, Int] = collection.mutable.Map[String, Int]()

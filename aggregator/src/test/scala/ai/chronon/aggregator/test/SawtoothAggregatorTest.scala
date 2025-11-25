@@ -28,7 +28,6 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import java.util
-import scala.collection.Seq
 import scala.collection.mutable
 
 class Timer {

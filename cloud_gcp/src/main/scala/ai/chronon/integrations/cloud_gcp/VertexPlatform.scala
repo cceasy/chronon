@@ -8,7 +8,6 @@ import io.vertx.core.json.{JsonArray, JsonObject}
 import io.vertx.ext.web.client.WebClient
 
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
-import scala.jdk.CollectionConverters.mapAsScalaMapConverter
 import scala.util.{Failure, Success}
 import scala.jdk.CollectionConverters._
 

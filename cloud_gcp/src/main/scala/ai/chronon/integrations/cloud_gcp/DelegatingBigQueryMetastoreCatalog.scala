@@ -5,9 +5,9 @@ import com.google.cloud.bigquery.{
   BigQueryOptions,
   ExternalTableDefinition,
   StandardTableDefinition,
-  ViewDefinition,
   TableDefinition,
-  TableId
+  TableId,
+  ViewDefinition
 }
 import com.google.cloud.spark.bigquery.BigQueryCatalog
 import org.apache.iceberg.gcp.bigquery.BigQueryMetastoreCatalog
@@ -24,6 +24,8 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import java.util
 import scala.jdk.CollectionConverters._
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException
+import org.slf4j.LoggerFactory
+
 import scala.util.{Failure, Success, Try}
 
 /** Galactus catalog that allows us to interact with BigQuery metastore as a spark catalog. This allows for
@@ -41,6 +43,8 @@ import scala.util.{Failure, Success, Try}
   * support will depend on underlying libraries to support them.
   */
 class DelegatingBigQueryMetastoreCatalog extends TableCatalog with SupportsNamespaces with FunctionCatalog {
+
+  @transient private lazy val logger = LoggerFactory.getLogger(getClass)
 
   @transient private lazy val bqOptions = BigQueryOptions.getDefaultInstance
   @transient private lazy val bigQueryClient: BigQuery = bqOptions.getService

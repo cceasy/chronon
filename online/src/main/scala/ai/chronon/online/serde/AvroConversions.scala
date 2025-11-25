@@ -212,7 +212,7 @@ object AvroConversions {
           }
           arr
 
-        case genericArray: GenericData.Array[Any] =>
+        case genericArray: GenericData.Array[_] =>
           val arr = new util.ArrayList[Any](genericArray.size)
           val iterator = genericArray.iterator()
           while (iterator.hasNext) {

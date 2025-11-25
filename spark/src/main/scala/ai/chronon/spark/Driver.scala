@@ -449,7 +449,7 @@ object Driver {
         args.sample(),
         args.skewDetection(),
         confType = Some(args.confType())
-      ).run
+      ).run()
     }
   }
 
@@ -647,7 +647,7 @@ object Driver {
       // trigger creates of the datasets before we proceed with writes
       acceptedEndPoints.foreach(e => args.metaDataStore.create(e))
 
-      val putRequestsSeq: Seq[Future[scala.collection.Seq[Boolean]]] = kvMap.toSeq.map { case (endPoint, kvMap) =>
+      val putRequestsSeq: Seq[Future[scala.Seq[Boolean]]] = kvMap.toSeq.map { case (endPoint, kvMap) =>
         args.metaDataStore.put(kvMap, endPoint)
       }
       val res = putRequestsSeq.flatMap(putRequests => Await.result(putRequests, 1.hour))
@@ -968,7 +968,7 @@ object Driver {
 
       // TODO -- when we support bootstrapping in the modular flow from Driver, we'll need to omit
       // Bootstrapped JoinParts here
-      val allJoinParts = joinConf.joinParts.asScala
+      val allJoinParts = joinConf.joinParts.asScala.toSeq
 
       val endDate = args.endDate()
       val startDate = args.startPartitionOverride.getOrElse(endDate)

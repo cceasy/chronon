@@ -6,7 +6,6 @@ import sttp.model.StatusCode
 
 import java.util.Base64
 import scala.concurrent.Future
-import scala.collection.Seq
 
 // Hacky test kv store that we use to send objects to the in-memory KV store that lives in a different JVM (e.g spark -> hub)
 class HTTPKVStore(host: String = "localhost", port: Int = 9000) extends KVStore with Serializable {
@@ -14,9 +13,9 @@ class HTTPKVStore(host: String = "localhost", port: Int = 9000) extends KVStore 
   val backend: SttpBackend[Identity, Any] = HttpClientSyncBackend()
   val baseUrl: String = s"http://$host:$port/api/v1/dataset"
 
-  override def multiGet(requests: collection.Seq[KVStore.GetRequest]): Future[collection.Seq[KVStore.GetResponse]] = ???
+  override def multiGet(requests: scala.Seq[KVStore.GetRequest]): Future[scala.Seq[KVStore.GetResponse]] = ???
 
-  override def multiPut(putRequests: collection.Seq[KVStore.PutRequest]): Future[collection.Seq[Boolean]] = {
+  override def multiPut(putRequests: scala.Seq[KVStore.PutRequest]): Future[scala.Seq[Boolean]] = {
     if (putRequests.isEmpty) {
       Future.successful(Seq.empty)
     } else {

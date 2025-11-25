@@ -26,7 +26,7 @@ import org.apache.spark.sql.functions.{col, date_add, date_format, left, log, to
 import org.slf4j.{Logger, LoggerFactory}
 
 import java.time.Instant
-import scala.collection.Seq
+
 import scala.util.{Failure, Success}
 
 /** Result of analyzing join parts for reuse from production table.

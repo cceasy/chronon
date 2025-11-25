@@ -2,6 +2,7 @@ package ai.chronon.api.planner
 
 import ai.chronon.api.Extensions.{GroupByOps, WindowUtils}
 import ai.chronon.api.Extensions._
+import ai.chronon.api.ScalaJavaConversions.IterableOps
 import ai.chronon.api.{Join, PartitionSpec, TableDependency, TableInfo}
 import ai.chronon.planner
 import ai.chronon.planner.Node
@@ -42,7 +43,7 @@ case class MonolithJoinPlanner(join: Join)(implicit outputPartitionSpec: Partiti
     val stepDays = 1 // Default step days for metadata upload
 
     // Create table dependencies for all GroupBy parts (both direct GroupBy deps and upstream join deps)
-    val allDeps = Option(join.joinParts).map(_.asScala).getOrElse(Seq.empty).flatMap { joinPart =>
+    val allDeps = Option(join.joinParts).map(_.toScala).getOrElse(Seq.empty).flatMap { joinPart =>
       val groupBy = joinPart.groupBy
       val hasStreamingSource = groupBy.streamingSource.isDefined
 
@@ -77,7 +78,7 @@ case class MonolithJoinPlanner(join: Join)(implicit outputPartitionSpec: Partiti
       MetaDataUtils.layer(join.metaData,
                           "metadata_upload",
                           join.metaData.name + "__metadata_upload",
-                          allDeps,
+                          allDeps.toSeq,
                           Some(stepDays))
     val node = new planner.JoinMetadataUpload().setJoin(join)
     toNode(metaData, _.setJoinMetadataUpload(node), semanticMonolithJoin(join))

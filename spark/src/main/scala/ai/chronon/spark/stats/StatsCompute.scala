@@ -32,7 +32,6 @@ import org.apache.spark.sql.functions
 import org.apache.spark.sql.functions.col
 
 import scala.util.Try
-import scala.collection.Seq
 
 class StatsCompute(inputDf: DataFrame, keys: Seq[String], name: String) extends Serializable {
 

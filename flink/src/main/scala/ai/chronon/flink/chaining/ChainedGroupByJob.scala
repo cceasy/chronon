@@ -19,7 +19,6 @@ import ai.chronon.flink.window.{
 import ai.chronon.online.{Api, GroupByServingInfoParsed, TopicInfo}
 
 import java.util.concurrent.TimeUnit
-import scala.collection.Seq
 import org.apache.flink.streaming.api.datastream.{AsyncDataStream, DataStream, SingleOutputStreamOperator}
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
 import org.apache.flink.streaming.api.functions.async.RichAsyncFunction

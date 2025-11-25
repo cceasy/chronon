@@ -19,7 +19,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers.convertToAnyShouldWrapper
 import org.scalatestplus.mockito.MockitoSugar.mock
 
-import scala.collection.Seq
+
 
 // Flink Job Integration Test for Event-based GroupBys
 class FlinkJobEventIntegrationTest extends AnyFlatSpec with BeforeAndAfter {

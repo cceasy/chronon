@@ -28,7 +28,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.function.Consumer
-import scala.collection.Seq
+
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
@@ -205,9 +205,9 @@ object ExternalSourceHandler {
 // Chronon issues the request in parallel to groupBy fetches.
 // There is a Java Friendly Handler that extends this and handles conversions
 // see: [[ai.chronon.online.JavaExternalSourceHandler]]
-abstract class ExternalSourceHandler extends Serializable {
+trait ExternalSourceHandler extends Serializable {
   implicit lazy val executionContext: ExecutionContext = ExternalSourceHandler.executor
-  def fetch(requests: Seq[Fetcher.Request]): Future[Seq[Fetcher.Response]]
+  def fetch(requests: scala.Seq[Fetcher.Request]): Future[scala.Seq[Fetcher.Response]]
 }
 
 // the implementer of this class should take a single argument, a scala map of string to string

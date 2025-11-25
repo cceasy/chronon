@@ -17,7 +17,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
 import scala.collection.JavaConverters._
-import scala.collection.Seq
+
 
 class ChainedGroupByJobIntegrationTest extends AnyFlatSpec with BeforeAndAfter with Matchers {
   import JoinTestUtils._

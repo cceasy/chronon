@@ -24,8 +24,6 @@ import ai.chronon.api.Extensions.WindowOps
 import ai.chronon.api.Row
 import ai.chronon.api.StringType
 
-import scala.collection.Seq
-
 // The primary API of the aggregator package.
 // the semantics are to mutate values in place for performance reasons
 class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationParts: Seq[AggregationPart])

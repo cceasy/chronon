@@ -9,7 +9,6 @@ import ai.chronon.online.metrics.Metrics
 import com.github.benmanes.caffeine.cache.{Cache => CaffeineCache}
 import org.slf4j.{Logger, LoggerFactory}
 
-import scala.collection.Seq
 import scala.util.{Success, Try}
 
 /*

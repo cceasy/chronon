@@ -51,7 +51,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import scala.annotation.tailrec
-import scala.collection.Seq
+
 import scala.util.Try
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {

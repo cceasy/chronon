@@ -20,7 +20,7 @@ import org.threeten.bp.Duration
 
 import java.nio.charset.Charset
 import scala.collection.concurrent.TrieMap
-import scala.collection.{Seq, mutable}
+import scala.collection.mutable
 import scala.compat.java8.FutureConverters
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
@@ -147,7 +147,7 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
           case (Some(startTs), StreamingTable) =>
             val tileKey = TilingUtils.deserializeTileKey(request.keyBytes)
             val tileSizeMs = tileKey.tileSizeMillis
-            val baseKeyBytes = tileKey.keyBytes.asScala.map(_.asInstanceOf[Byte])
+            val baseKeyBytes = tileKey.keyBytes.asScala.map(_.toByte).toSeq
             val endTime = request.endTsMillis.getOrElse(System.currentTimeMillis())
 
             // Use existing method to add row keys
@@ -189,7 +189,7 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
                   KVStore.TimedValue(cell.getValue.toByteArray, cell.getTimestamp / 1000)
                 }
               }
-            }
+            }.toSeq
 
             KVStore.GetResponse(request, Success(timedValues))
           }
@@ -282,7 +282,7 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
           row.getCells(ColumnFamilyString, ColumnFamilyQualifier).asScala.map { cell =>
             ListValue(row.getKey.toByteArray, cell.getValue.toByteArray)
           }
-        }
+        }.toSeq
 
         val propsMap: Map[String, Any] =
           if (listValues.size < listLimit) {
@@ -323,7 +323,7 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
             (buildRowKey(request.keyBytes, request.dataset, Some(ts)), timestampInPutRequest)
           case (Some(ts), StreamingTable) =>
             val tileKey = TilingUtils.deserializeTileKey(request.keyBytes)
-            val baseKeyBytes = tileKey.keyBytes.asScala.map(_.asInstanceOf[Byte])
+            val baseKeyBytes = tileKey.keyBytes.asScala.map(_.toByte).toSeq
             (buildTiledRowKey(baseKeyBytes, request.dataset, ts, tileKey.tileSizeMillis),
              tileKey.tileStartTimestampMillis)
           case _ =>

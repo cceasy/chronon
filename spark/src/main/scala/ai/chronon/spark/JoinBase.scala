@@ -34,7 +34,6 @@ import org.slf4j.{Logger, LoggerFactory}
 
 import java.time.Instant
 import scala.collection.JavaConverters._
-import scala.collection.Seq
 
 abstract class JoinBase(val joinConfCloned: api.Join,
                         endPartition: String,

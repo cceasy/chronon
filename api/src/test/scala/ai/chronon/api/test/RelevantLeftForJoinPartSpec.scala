@@ -6,7 +6,6 @@ import ai.chronon.api.planner.RelevantLeftForJoinPart
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-import scala.collection.Seq
 
 class RelevantLeftForJoinPartSpec extends AnyFlatSpec with Matchers {
 

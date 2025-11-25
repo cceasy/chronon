@@ -42,7 +42,7 @@ import java.util.function.Consumer
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-import scala.collection.{Seq, mutable}
+import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
@@ -233,8 +233,8 @@ class Fetcher(val kvStore: KVStore,
       .map(_.iterator.map(logResponse(_, ts)).toSeq)
   }
 
-  def fetchModelTransforms(requests: Seq[Request],
-                           modelTransformsConf: Option[api.ModelTransforms] = None): Future[Seq[Response]] = {
+  def fetchModelTransforms(requests: scala.Seq[Request],
+                           modelTransformsConf: Option[api.ModelTransforms] = None): Future[scala.Seq[Response]] = {
     val modelTransformsFetcher = new ModelTransformsFetcher(modelPlatformProvider, debug)
 
     modelTransformsConf match {
@@ -286,9 +286,10 @@ class Fetcher(val kvStore: KVStore,
     }
   }
 
-  private def fetchModelTransformsWithConf(requests: Seq[Request],
-                                           modelTransforms: api.ModelTransforms,
-                                           modelTransformsFetcher: ModelTransformsFetcher): Future[Seq[Response]] = {
+  private def fetchModelTransformsWithConf(
+      requests: scala.Seq[Request],
+      modelTransforms: api.ModelTransforms,
+      modelTransformsFetcher: ModelTransformsFetcher): Future[scala.Seq[Response]] = {
     val maybeJoinSource = modelTransforms.joinSource
 
     if (maybeJoinSource.nonEmpty) {
@@ -615,29 +616,28 @@ class Fetcher(val kvStore: KVStore,
     if (validRequests.isEmpty) { return Future.successful(null) }
 
     // step-2 dedup external requests across joins
-    val externalToJoinRequests: Seq[ExternalToJoinRequest] = validRequests
-      .flatMap { joinRequest =>
-        val joinConf = metadataStore.getJoinConf(joinRequest.name)
-        if (joinConf.isFailure) {
-          metadataStore.getJoinConf.refresh(joinRequest.name)
-        }
-        val parts =
-          metadataStore
-            .getJoinConf(joinRequest.name)
-            .get
-            .join
-            .onlineExternalParts // cheap since it is cached, valid since step-1
-
-        parts.iterator().asScala.map { part =>
-          val externalRequest = Try(part.applyMapping(joinRequest.keys)) match {
-            case Success(mappedKeys)                     => Left(Request(part.source.metadata.name, mappedKeys))
-            case Failure(exception: KeyMissingException) => Right(exception)
-            case Failure(otherException)                 => throw otherException
-          }
-          ExternalToJoinRequest(externalRequest, joinRequest, part)
-        }
-
+    val externalToJoinRequests: Seq[ExternalToJoinRequest] = validRequests.flatMap { joinRequest =>
+      val joinConf = metadataStore.getJoinConf(joinRequest.name)
+      if (joinConf.isFailure) {
+        metadataStore.getJoinConf.refresh(joinRequest.name)
       }
+      val parts =
+        metadataStore
+          .getJoinConf(joinRequest.name)
+          .get
+          .join
+          .onlineExternalParts // cheap since it is cached, valid since step-1
+
+      parts.iterator().asScala.map { part =>
+        val externalRequest = Try(part.applyMapping(joinRequest.keys)) match {
+          case Success(mappedKeys)                     => Left(Request(part.source.metadata.name, mappedKeys))
+          case Failure(exception: KeyMissingException) => Right(exception)
+          case Failure(otherException)                 => throw otherException
+        }
+        ExternalToJoinRequest(externalRequest, joinRequest, part)
+      }
+
+    }.toSeq
 
     val validExternalRequestToJoinRequestMap = externalToJoinRequests
       .filter(_.externalRequest.isLeft)

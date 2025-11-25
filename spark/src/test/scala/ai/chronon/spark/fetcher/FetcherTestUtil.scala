@@ -26,7 +26,7 @@ import org.slf4j.{Logger, LoggerFactory}
 
 import java.util.concurrent.Executors
 import java.{lang, util}
-import scala.collection.Seq
+
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}

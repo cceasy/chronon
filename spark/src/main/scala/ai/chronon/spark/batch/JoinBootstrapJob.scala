@@ -14,8 +14,6 @@ import org.apache.spark.sql.functions.{coalesce, col, lit, typedLit}
 import org.slf4j.{Logger, LoggerFactory}
 import ai.chronon.spark.catalog.TableUtils
 
-import scala.collection.Seq
-
 /** Runs after the `SourceJob` and produces boostrap table that is then used in the final join. Unique per join, whereas
   * `SourceJob` output is shared across all joins.
   *

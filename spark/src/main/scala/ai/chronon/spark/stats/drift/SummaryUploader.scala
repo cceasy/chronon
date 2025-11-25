@@ -16,7 +16,6 @@ import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.util.Failure
 import scala.util.Success
-import scala.collection.Seq
 
 class SummaryUploader(summaryDF: DataFrame,
                       api: Api,

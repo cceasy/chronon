@@ -33,9 +33,6 @@ class DataprocServerlessSubmitter(batchControllerClient: BatchControllerClient,
     val batch = buildBatch(mainClass, jarUri, files, jobProperties, formattedDataprocLabels, args: _*)
     val locationName = LocationName.of(projectId, region)
 
-    logger.info(s"Creating batch with ID: $jobId in location: $locationName")
-    logger.info(s"Batch details: ${batch.toString}")
-
     try {
       val batchF = batchControllerClient.createBatchAsync(locationName, batch, jobId)
       val result = batchF.get
@@ -106,7 +103,19 @@ class DataprocServerlessSubmitter(batchControllerClient: BatchControllerClient,
     // Minimal Dataproc Serverless batches don't require RuntimeConfig
     val runtimeConfBuilder = RuntimeConfig
       .newBuilder()
-      .setVersion("1.2")
+      .setVersion("2.3")
+
+    // Add PeripheralsConfig if needed. This should be set in EnvironmentConfig below.
+//    val peripheralsConfig = PeripheralsConfig
+//      .newBuilder()
+//      .setSparkHistoryServerConfig(
+//        SparkHistoryServerConfig
+//          .newBuilder()
+//          .setDataprocCluster("projects/canary-443022/regions/us-central1/clusters/zipline-canary-cluster")
+//          .build()
+//      )
+//      .build()
+
     if (jobProperties.nonEmpty) {
       runtimeConfBuilder
         .putAllProperties(jobProperties.asJava)
@@ -122,6 +131,7 @@ class DataprocServerlessSubmitter(batchControllerClient: BatchControllerClient,
     val environmentConfig = EnvironmentConfig
       .newBuilder()
       .setExecutionConfig(executionConfig)
+      // .setPeripheralsConfig(peripheralsConfig)
       .build()
 
     batchBuilder

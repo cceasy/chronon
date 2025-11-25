@@ -4,8 +4,6 @@ import ai.chronon.api.thrift.TBase
 import ai.chronon.api.{MetaData, PartitionSpec, ThriftJsonCodec}
 import ai.chronon.planner.{ConfPlan, Node, NodeContent}
 
-import scala.collection.Seq
-
 case class Mode(name: String, nodes: Seq[Node], cron: String)
 
 /** Base class for Chronon orchestration node planning. Corresponds 1:1 with a Chronon

@@ -4,7 +4,6 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api.ScalaJavaConversions.JListOps
 
 import java.util
-import scala.collection.Seq
 
 object MetaDataUtils {
 

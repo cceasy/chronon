@@ -32,7 +32,7 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{StringType, StructType}
 import org.slf4j.{Logger, LoggerFactory}
 
-import scala.collection.{immutable, mutable, Seq}
+import scala.collection.{immutable, mutable}
 import scala.collection.mutable.ListBuffer
 
 class Analyzer(tableUtils: TableUtils,

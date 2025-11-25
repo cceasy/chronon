@@ -15,7 +15,6 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 
 import java.net.URI
 import java.nio.charset.StandardCharsets
-import scala.collection.Seq
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success, Try}

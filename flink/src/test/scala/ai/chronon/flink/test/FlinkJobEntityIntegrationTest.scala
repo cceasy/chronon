@@ -17,7 +17,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers.convertToAnyShouldWrapper
 import org.scalatestplus.mockito.MockitoSugar.mock
 
-import scala.collection.Seq
+
 
 // Flink Job Integration Test for Entity-based GroupBys
 class FlinkJobEntityIntegrationTest extends AnyFlatSpec with BeforeAndAfter {

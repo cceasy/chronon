@@ -27,7 +27,6 @@ import org.slf4j.LoggerFactory
 import java.util.concurrent.TimeUnit
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
-import scala.collection.Seq
 
 object ObservabilityDemo {
   @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)

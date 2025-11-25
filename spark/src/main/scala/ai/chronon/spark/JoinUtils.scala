@@ -32,7 +32,7 @@ import org.apache.spark.util.sketch.BloomFilter
 import org.slf4j.{Logger, LoggerFactory}
 
 import java.util
-import scala.collection.{Map, Seq}
+import scala.collection.Map
 import scala.jdk.CollectionConverters._
 
 object JoinUtils {
@@ -291,7 +291,7 @@ object JoinUtils {
 
   def tablesToRecompute(joinConf: ai.chronon.api.Join,
                         outputTable: String,
-                        tableUtils: TableUtils): collection.Seq[String] = {
+                        tableUtils: TableUtils): scala.Seq[String] = {
     // Finds all join output tables (join parts and final table) that need recomputing (in monolithic spark job mode)
     val gson = new Gson()
     (for (
@@ -301,7 +301,7 @@ object JoinUtils {
     ) yield {
       logger.info(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
       joinConf.tablesToDrop(oldSemanticHash)
-    }).getOrElse(collection.Seq.empty)
+    }).getOrElse(scala.Seq.empty)
   }
 
   def shouldRecomputeLeft(joinConf: ai.chronon.api.Join, outputTable: String, tableUtils: TableUtils): Boolean = {

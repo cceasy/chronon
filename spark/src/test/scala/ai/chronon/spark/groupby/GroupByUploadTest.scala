@@ -217,7 +217,7 @@ class GroupByUploadTest extends SparkTestBase {
           mutationTopic = s"${reviewsTable}_mutations",
           mutationTable = s"${reviewsTable}_mutations"
         )),
-      keyColumns = collection.Seq("review"),
+      keyColumns = scala.Seq("review"),
       aggregations = Seq(
         Builders.Aggregation(
           operation = Operation.LAST,
@@ -239,7 +239,7 @@ class GroupByUploadTest extends SparkTestBase {
           query = Builders.Query(selects =
             Builders.Selects("review", "review_attrs_listing_last", "rating", "category_ratings", "ts"))
         )),
-      keyColumns = collection.Seq("review_attrs_listing_last"),
+      keyColumns = scala.Seq("review_attrs_listing_last"),
       aggregations = Seq(
         Builders.Aggregation(
           operation = Operation.AVERAGE,

@@ -24,6 +24,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  SCALA_VERSION: "2.12.18"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -41,23 +44,23 @@ jobs:
           apt-get update && apt-get install -y curl
 
       - name: Build Service JAR
-        run: ./mill service.assembly
+        run: ./mill service\[${{ env.SCALA_VERSION }}\].assembly
 
-      - name: Build Cloud GCP JAR  
-        run: ./mill cloud_gcp.assembly
+      - name: Build Cloud GCP JAR
+        run: ./mill cloud_gcp\[${{ env.SCALA_VERSION }}\].assembly
 
       - name: Build Flink jar
-        run: ./mill flink.assembly
+        run: ./mill flink\[${{ env.SCALA_VERSION }}\].assembly
 
       - name: Build Flink connectors jar
-        run: ./mill flink_connectors.assembly
+        run: ./mill flink_connectors\[${{ env.SCALA_VERSION }}\].assembly
 
       - name: Prepare build artifacts
         run: |
           # Copy jars to build_output as docker build can't access the mill output directories directly
           mkdir -p build_output
-          cp out/service/assembly.dest/out.jar build_output/service_assembly_deploy.jar
-          cp out/cloud_gcp/assembly.dest/out.jar build_output/cloud_gcp_lib_deploy.jar
+          cp out/service/${{ env.SCALA_VERSION }}/assembly.dest/out.jar build_output/service_assembly_deploy.jar
+          cp out/cloud_gcp/${{ env.SCALA_VERSION }}/assembly.dest/out.jar build_output/cloud_gcp_lib_deploy.jar
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -76,25 +79,25 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: service-assembly-jar
-          path: out/service/assembly.dest/out.jar
+          path: out/service/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
 
       - name: Upload Cloud GCP Jar
         uses: actions/upload-artifact@v4
         with:
           name: cloud-gcp-jar
-          path: out/cloud_gcp/assembly.dest/out.jar
+          path: out/cloud_gcp/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
 
       - name: Upload Flink Jar
         uses: actions/upload-artifact@v4
         with:
           name: flink-jar
-          path: out/flink/assembly.dest/out.jar
+          path: out/flink/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
 
       - name: Upload Flink connectors Jar
         uses: actions/upload-artifact@v4
         with:
           name: flink-connectors-jar
-          path: out/flink_connectors/assembly.dest/out.jar
+          path: out/flink_connectors/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
 
       - name: Upload Docker image
         uses: actions/upload-artifact@v4

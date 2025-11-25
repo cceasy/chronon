@@ -16,7 +16,7 @@ import org.apache.spark.util.sketch.BloomFilter
 import org.slf4j.{Logger, LoggerFactory}
 
 import java.util
-import scala.collection.{Map, Seq}
+import scala.collection.Map
 import scala.jdk.CollectionConverters._
 
 case class JoinPartJobContext(leftDf: Option[DfWithStats],

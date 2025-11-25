@@ -1,6 +1,7 @@
-import mill._
+import mill.api._
 import mill.scalalib._
 import mill.scalalib.scalafmt._
+import mill.scalalib.publish._
 import coursier.maven.MavenRepository
 
 // Shared constants and dependencies
@@ -14,10 +15,28 @@ object Constants {
     MavenRepository("https://conjars.org/repo/")
   )
 
-  val scalaVersion = "2.12.18"
-  // TODO: set this to catch up to the version we have in the platform repo
-  val chrononVersion = "0.0.32"
+  val defaultScalaVersion = "2.12.18"
+  val scalaVersions = Seq(defaultScalaVersion, "2.13.17")
+
   val jvmId = ""
+
+  // Publishing configuration
+  val organization = "ai.zipline"
+  val projectUrl = "https://github.com/zipline-ai/chronon"
+  val vcsUrl = "https://github.com/zipline-ai/chronon"
+  val licenses = Seq(License.`Apache-2.0`)
+  val developers = Seq(
+    Developer("zipline-ai", "Zipline AI", "https://github.com/zipline-ai")
+  )
+
+  def pomSettingsFor(artifactId: String) = PomSettings(
+    description = artifactId,
+    organization = organization,
+    url = projectUrl,
+    licenses = licenses,
+    versionControl = VersionControl.github("zipline-ai", "chronon"),
+    developers = developers
+  )
 
   // Common dependencies
   def commonDeps = Seq(
@@ -105,11 +124,164 @@ object Constants {
     // Disable multi-release JAR processing to avoid path issues
     "-Djdk.util.jar.enableMultiRelease=false"
   )
+
+  // GCS publishing configuration
+  val defaultGcsBucket = "gs://zipline-artifacts-canary"
+  val defaultGcsBasePath = "release"
+}
+
+// Custom PublishModule trait that adds GCS publishing capabilities
+trait GcsPublishModule extends PublishModule {
+  // Self-type to ensure this trait is mixed with CrossScalaModule
+  this: CrossScalaModule =>
+
+  import java.time.Instant
+
+  /**
+   * GCS bucket to publish artifacts to. Override in modules to customize.
+   */
+  def gcsBucket: String = Constants.defaultGcsBucket
+
+  /**
+   * Base path within the GCS bucket. Override to customize.
+   */
+  def gcsBasePath: String = Constants.defaultGcsBasePath
+
+  /**
+   * Deploy artifact name for GCS. Defaults to artifactName + "_deploy.jar"
+   */
+  def gcsArtifactName: Task[String] = Task { s"${artifactName()}_deploy.jar" }
+
+  /**
+   * Whether this module should be published to GCS. Override to disable for specific modules.
+   */
+  def publishToGcsEnabled: Boolean = true
+
+  /**
+   * Get git metadata for artifact tagging
+   */
+  private def getGitMetadata(): Map[String, String] = {
+    try {
+      val commit = os.proc("git", "rev-parse", "HEAD").call().out.text().trim
+      val branch = os.proc("git", "rev-parse", "--abbrev-ref", "HEAD").call().out.text().trim
+      val date = Instant.now().toString
+      Map(
+        "commit" -> commit,
+        "branch" -> branch,
+        "updated_date" -> date
+      )
+    } catch {
+      case e: Exception =>
+        println(s"Warning: Could not get git metadata: ${e.getMessage}")
+        Map("updated_date" -> Instant.now().toString)
+    }
+  }
+
+  /**
+   * Publish assembly JAR to GCS with metadata
+   */
+  def publishGcsAssembly() = Task.Command {
+    if (!publishToGcsEnabled) {
+      println(s"GCS publishing disabled for ${artifactName()}")
+      ()
+    } else {
+      // Get the assembly jar path
+      val jarPathRef = assembly()
+      val jarPath = jarPathRef.path
+
+      if (!os.exists(jarPath)) {
+        throw new Exception(s"Assembly JAR not found at $jarPath. Run assembly task first.")
+      }
+
+      // Build GCS destination path
+      val version = publishVersion()
+      val scalaVer = scalaVersion()
+      val deployName = gcsArtifactName()
+      val gcsPath = s"$gcsBucket/$gcsBasePath/$version/jars/$deployName"
+
+      println(s"Publishing ${artifactName()} to GCS...")
+      println(s"  Version: $version")
+      println(s"  Scala: $scalaVer")
+      println(s"  Source: $jarPath")
+      println(s"  Destination: $gcsPath")
+
+      // Get git metadata
+      val metadata = getGitMetadata() + ("scala_version" -> scalaVer)
+      val metadataStr = metadata.map { case (k, v) => s"$k=$v" }.mkString(",")
+
+      // Upload to GCS
+      try {
+        os.proc("gcloud", "storage", "cp", jarPath.toString, gcsPath)
+          .call(stdout = os.Inherit, stderr = os.Inherit)
+
+        // Set metadata
+        os.proc(
+          "gcloud", "storage", "objects", "update", gcsPath,
+          s"--custom-metadata=$metadataStr"
+        ).call(stdout = os.Inherit, stderr = os.Inherit)
+
+        println(s"  ✓ Successfully published ${artifactName()} to $gcsPath")
+      } catch {
+        case e: Exception =>
+          throw new Exception(s"Failed to publish to GCS: ${e.getMessage}", e)
+      }
+    }
+  }
+
+  /**
+   * Publish JAR artifact (not assembly) to GCS
+   */
+  def publishGcsJar() = Task.Command {
+    if (!publishToGcsEnabled) {
+      println(s"GCS publishing disabled for ${artifactName()}")
+      ()
+    } else {
+      // Get the JAR path
+      val jarPathRef = jar()
+      val jarPath = jarPathRef.path
+
+      if (!os.exists(jarPath)) {
+        throw new Exception(s"JAR not found at $jarPath.")
+      }
+
+      // Build GCS destination path
+      val version = publishVersion()
+      val scalaVer = scalaVersion()
+      val jarName = s"${artifactName()}-${scalaVer}-${version}.jar"
+      val gcsPath = s"$gcsBucket/$gcsBasePath/$version/libs/$jarName"
+
+      println(s"Publishing ${artifactName()} JAR to GCS...")
+      println(s"  Version: $version")
+      println(s"  Scala: $scalaVer")
+      println(s"  Source: $jarPath")
+      println(s"  Destination: $gcsPath")
+
+      // Get git metadata
+      val metadata = getGitMetadata() + ("scala_version" -> scalaVer)
+      val metadataStr = metadata.map { case (k, v) => s"$k=$v" }.mkString(",")
+
+      // Upload to GCS
+      try {
+        os.proc("gcloud", "storage", "cp", jarPath.toString, gcsPath)
+          .call(stdout = os.Inherit, stderr = os.Inherit)
+
+        // Set metadata
+        os.proc(
+          "gcloud", "storage", "objects", "update", gcsPath,
+          s"--custom-metadata=$metadataStr"
+        ).call(stdout = os.Inherit, stderr = os.Inherit)
+
+        println(s"  ✓ Successfully published ${artifactName()} JAR to $gcsPath")
+      } catch {
+        case e: Exception =>
+          throw new Exception(s"Failed to publish JAR to GCS: ${e.getMessage}", e)
+      }
+    }
+  }
 }
 
 // Base module configuration
-trait BaseModule extends ScalaModule with ScalafmtModule {
-  def scalaVersion = Constants.scalaVersion
+trait BaseModule extends CrossScalaModule with ScalafmtModule with GcsPublishModule {
   def jvmId = Constants.jvmId
 
   def repositoriesTask = Task.Anon { super.repositoriesTask() ++ Constants.repositories }
@@ -138,12 +310,24 @@ trait BaseModule extends ScalaModule with ScalafmtModule {
     moduleDir / "src" / "main" / "scala",
     moduleDir / "src" / "main" / "java"
   )
+
+  // PublishModule implementation
+  def pomSettings = PomSettings(
+    description = artifactName(),
+    organization = Constants.organization,
+    url = Constants.projectUrl,
+    licenses = Constants.licenses,
+    versionControl = VersionControl.github("zipline-ai", "chronon"),
+    developers = Constants.developers
+  )
+
+  // Override to read version from environment at task execution time
+  override def publishVersion = Task { sys.env.getOrElse("CHRONON_VERSION", "0.0.32") }
 }
 
 // Common test module configuration
 trait BaseTestModule extends ScalaModule with TestModule.ScalaTest {
   def jvmId = Constants.jvmId
-  def scalaVersion = Constants.scalaVersion
 
   def testFramework = "org.scalatest.tools.Framework"
 

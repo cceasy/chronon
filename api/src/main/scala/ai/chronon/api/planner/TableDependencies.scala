@@ -10,7 +10,7 @@ object TableDependencies {
 
   def fromStagingQuery(stagingQuery: api.StagingQuery): Seq[TableDependency] = {
     Option(stagingQuery.tableDependencies)
-      .map(_.asScala.toSeq)
+      .map(_.toScala.toSeq)
       .getOrElse(Seq.empty)
   }
 
@@ -128,7 +128,7 @@ object TableDependencies {
 
   def fromJoinSources(sources: java.util.List[api.Source]): Seq[TableDependency] = {
     Option(sources)
-      .map(_.asScala)
+      .map(_.toScala.toSeq)
       .getOrElse(Seq.empty)
       .filter(_.isSetJoinSource)
       .map { source =>

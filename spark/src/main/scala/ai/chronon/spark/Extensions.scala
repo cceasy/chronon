@@ -30,7 +30,7 @@ import org.apache.spark.util.sketch.BloomFilter
 import org.slf4j.{Logger, LoggerFactory}
 
 import java.util
-import scala.collection.Seq
+
 import scala.reflect.ClassTag
 
 object Extensions {

@@ -5,7 +5,6 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
 import java.util.{ArrayList => JArrayList}
-import scala.collection.Seq
 
 class CollectionExtensionsTest extends AnyFlatSpec with Matchers {
 

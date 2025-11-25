@@ -31,7 +31,7 @@ import org.apache.spark.sql
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
-import scala.collection.{mutable, Seq}
+import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Success, Try}
 
@@ -146,8 +146,8 @@ class Join(joinConf: api.Join,
           } else {
             row.getAs[mutable.WrappedArray[String]](0)
           }
-          (hashes, row.getAs[Long](1))
-        }.toSeq
+          (hashes.toSeq, row.getAs[Long](1))
+        }
       }
 
     val partsToCompute: Seq[JoinPartMetadata] = {
@@ -205,7 +205,7 @@ class Join(joinConf: api.Join,
       val sql = QueryUtils.build(null, partTable, wheres)
       logger.info(s"Pulling data from joinPart table with: $sql")
       (joinPart, tableUtils.scanDfBase(null, partTable, List.empty, wheres, None))
-    }
+    }.toSeq
   }
 
   override def computeFinalJoin(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): Unit = {
@@ -326,7 +326,7 @@ class Join(joinConf: api.Join,
           val skewKeys: Option[Map[String, Seq[String]]] = Option(joinConfCloned.skewKeys).map { jmap =>
             val scalaMap = jmap.toScala
             scalaMap.map { case (key, list) =>
-              key -> list.asScala
+              key -> list.asScala.toSeq
             }
           }
 

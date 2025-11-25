@@ -31,7 +31,7 @@ import org.slf4j.{Logger, LoggerFactory}
 import java.io.{PrintWriter, StringWriter}
 import java.time.{Instant, ZoneId}
 import java.time.format.DateTimeFormatter
-import scala.collection.{mutable, Seq}
+import scala.collection.mutable
 import scala.util.{Failure, Success, Try}
 
 /** Trait to track the table format in use by a Chronon dataset and some utility methods to help
@@ -562,7 +562,7 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
     })
 
     if (inconsistentFields.nonEmpty) {
-      throw IncompatibleSchemaException(inconsistentFields)
+      throw IncompatibleSchemaException(inconsistentFields.toSeq)
     }
 
     val newFieldDefinitions = newFields.map(newField => newField.toDDL)

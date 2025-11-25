@@ -13,12 +13,12 @@ import ai.chronon.api.Extensions.{
 }
 import ai.chronon.api.ScalaJavaConversions.{JListOps, JMapOps, ListOps, MapOps}
 import ai.chronon.api.{Constants, PartitionRange, StructField}
+import ai.chronon.eval._
 import ai.chronon.online.serde.SparkConversions
 import ai.chronon.online.serde.SparkConversions.toChrononSchema
-import ai.chronon.eval._
-import ai.chronon.spark.{GroupBy, JoinUtils}
 import ai.chronon.spark.catalog.TableUtils
-import org.apache.spark.sql.functions.{col, left, lit, sum, when}
+import ai.chronon.spark.{GroupBy, JoinUtils}
+import org.apache.spark.sql.functions.{col, lit, sum, when}
 import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.sql.{DataFrame, Row}
 
@@ -26,8 +26,6 @@ import java.io.{PrintWriter, StringWriter}
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import scala.collection.{immutable, mutable}
-import scala.jdk.CollectionConverters.{asScalaBufferConverter, mapAsScalaMapConverter}
-import scala.util.Try
 
 class Eval(implicit tableUtils: TableUtils) {
   implicit val partitionSpec = tableUtils.partitionSpec
@@ -188,14 +186,14 @@ class Eval(implicit tableUtils: TableUtils) {
     // If latestPartitionAsRangeOption is empty then sources all have no partitions, and we'll skip the timestamp check,
     // but continue with schema checks
     if (latestPartitionAsRangeOption.nonEmpty) {
-      val timestampCheck = runTimestampChecks(groupByConf.sources.asScala.toSeq, groupBy.inputDf)
+      val timestampCheck = runTimestampChecks(groupByConf.sources.toScala.toSeq, groupBy.inputDf)
       evalResult.setSourceTimestampCheck(timestampCheck)
     } else {
       // If we couldn't find a partition for the source, we skip with a reason timestamp checks
       val timestampCheckSkipResult = new BaseEvalResult()
       timestampCheckSkipResult.setCheckResult(CheckResult.SKIPPED)
       timestampCheckSkipResult.setMessage(
-        s"Could not find any partitions in source ${groupByConf.sources.asScala.map(_.table).mkString(", ")} to run the group by on")
+        s"Could not find any partitions in source ${groupByConf.sources.toScala.map(_.table).mkString(", ")} to run the group by on")
       evalResult.setSourceTimestampCheck(timestampCheckSkipResult)
     }
 
@@ -261,7 +259,7 @@ class Eval(implicit tableUtils: TableUtils) {
 
       val keySchemaCheck = if (gbKeySchema.isDefined) {
         // Check the key Schema
-        checkKeySchema(leftSchemaFormatted, gbKeySchema.get.asScala.toMap, part.rightToLeft)
+        checkKeySchema(leftSchemaFormatted, gbKeySchema.get.toScala.toMap, part.rightToLeft)
       } else {
         val keyCheck = new BaseEvalResult()
         keyCheck.setCheckResult(CheckResult.SKIPPED)

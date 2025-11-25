@@ -70,7 +70,7 @@ jobs:
       - name: Run Python Build Script
         id: build-wheel
         run: |
-          ZIPLINE_VERSION=${VERSION#v}  ./mill python.wheel
+          CHRONON_VERSION=${VERSION#v}  ./mill python.wheel
           EXPECTED_WHEEL_DIR=./out/python/wheel.dest/dist
           EXPECTED_ZIPLINE_WHEEL="zipline_ai-${VERSION#v}-py3-none-any.whl"
           if [ ! -f "$EXPECTED_WHEEL_DIR/$EXPECTED_ZIPLINE_WHEEL" ]; then

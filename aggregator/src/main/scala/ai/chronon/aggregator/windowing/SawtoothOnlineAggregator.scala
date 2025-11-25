@@ -22,8 +22,6 @@ import ai.chronon.api._
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import scala.collection.Seq
-
 // Wrapper class for handling Irs in the tiled chronon use case
 case class TiledIr(ts: Long, ir: Array[Any])
 

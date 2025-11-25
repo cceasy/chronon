@@ -12,6 +12,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
 env:
+  SCALA_VERSION: "2.12.18"
   AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID}}
   AWS_REGION: ${{secrets.AWS_REGION}}
   GCP_PROJECT_ID: ${{secrets.GCP_PROJECT_ID}}
@@ -58,16 +59,16 @@ jobs:
         run: |
           set -eo pipefail
           echo "Building wheel"
-          ZIPLINE_VERSION=$VERSION ./mill python.wheel
+          CHRONON_VERSION=$VERSION ./mill python.wheel
 
-          EXPECTED_ZIPLINE_WHEEL="out/python/wheel.dest/dist/zipline_ai-${{ env.VERSION }}-py3-none-any.whl"
+          EXPECTED_ZIPLINE_WHEEL="out/python/wheel.dest/dist/zipline_ai-$VERSION-py3-none-any.whl"
           if [ ! -f "$EXPECTED_ZIPLINE_WHEEL" ]; then
             echo "$EXPECTED_ZIPLINE_WHEEL not found"
             exit 1
           fi
           echo "wheel_file=$EXPECTED_ZIPLINE_WHEEL" >> $GITHUB_OUTPUT
           echo "wheel_name=$(basename $EXPECTED_ZIPLINE_WHEEL)" >> $GITHUB_OUTPUT
-          echo "version=${{ env.VERSION }}" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Upload Wheel
         uses: actions/upload-artifact@v4
@@ -80,41 +81,41 @@ jobs:
         id: mill-build
         run: |
           ./mill clean
-          ./mill flink.assembly
-          ./mill cloud_gcp.assembly
-          ./mill cloud_aws.assembly
-          ./mill service.assembly
-          ./mill flink_connectors.assembly
+          ./mill flink\[${{ env.SCALA_VERSION }}\].assembly
+          ./mill cloud_gcp\[${{ env.SCALA_VERSION }}\].assembly
+          ./mill cloud_aws\[${{ env.SCALA_VERSION }}\].assembly
+          ./mill service\[${{ env.SCALA_VERSION }}\].assembly
+          ./mill flink_connectors\[${{ env.SCALA_VERSION }}\].assembly
 
       - name: Upload Flink Assembly Jar
         uses: actions/upload-artifact@v4
         with:
           name: flink-assembly-jar
-          path: out/flink/assembly.dest/out.jar
+          path: out/flink/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
 
       - name: Upload Cloud AWS Jar
         uses: actions/upload-artifact@v4
         with:
           name: cloud-aws-jar
-          path: out/cloud_aws/assembly.dest/out.jar
+          path: out/cloud_aws/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
 
       - name: Upload Cloud GCP Jar
         uses: actions/upload-artifact@v4
         with:
           name: cloud-gcp-jar
-          path: out/cloud_gcp/assembly.dest/out.jar
+          path: out/cloud_gcp/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
 
       - name: Upload Service Assembly Jar
         uses: actions/upload-artifact@v4
         with:
           name: service-assembly-jar
-          path: out/service/assembly.dest/out.jar
+          path: out/service/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
 
       - name: Upload PubSub Jar
         uses: actions/upload-artifact@v4
         with:
           name: pubsub-jar
-          path: out/flink_connectors/assembly.dest/out.jar
+          path: out/flink_connectors/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
     outputs:
       wheel_file: ${{ steps.build-wheel.outputs.wheel_file }}
       wheel_name: ${{ steps.build-wheel.outputs.wheel_name }}

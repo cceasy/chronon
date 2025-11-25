@@ -21,7 +21,6 @@ import ai.chronon.online.fetcher.Fetcher;
 import ai.chronon.online.fetcher.FeaturesResponseType;
 import ai.chronon.online.fetcher.FetcherResponseWithTs;
 import scala.collection.Iterator;
-import scala.collection.Seq;
 import scala.Option;
 import scala.collection.mutable.ArrayBuffer;
 import scala.compat.java8.FutureConverters;
@@ -99,17 +98,17 @@ public class JavaFetcher {
       this.callerName = callerName;
       return this;
     }
-    
+
     public Builder flagStore(FlagStore flagStore) {
       this.flagStore = flagStore;
       return this;
     }
-    
+
     public Builder disableErrorThrows(Boolean disableErrorThrows) {
       this.disableErrorThrows = disableErrorThrows;
       return this;
     }
-    
+
     public Builder debug(Boolean debug) {
       this.debug = debug;
       return this;
@@ -120,24 +119,9 @@ public class JavaFetcher {
       return this;
     }
 
-    public Builder modelPlatformProvider(ModelPlatformProvider modelPlatformProvider) {
-        this.modelPlatformProvider = modelPlatformProvider;
-        return this;
-    }
-
     public JavaFetcher build() {
       return new JavaFetcher(this);
     }
-  }
-
-
-  public static <T extends Fetcher.BaseResponse> List<JavaResponse> toJavaResponses(Seq<T> responseSeq) {
-    List<JavaResponse> result = new ArrayList<>(responseSeq.size());
-    Iterator<T> it = responseSeq.iterator();
-    while (it.hasNext()) {
-      result.add(new JavaResponse(it.next()));
-    }
-    return result;
   }
 
   private <T extends ai.chronon.online.fetcher.Fetcher.BaseResponse> CompletableFuture<List<JavaResponse>> convertResponsesWithTs(
@@ -145,7 +129,12 @@ public class JavaFetcher {
             boolean isGroupBy,
             long startTs) {
     return FutureConverters.toJava(responses).toCompletableFuture().thenApply(resps -> {
-        List<JavaResponse> jResps = toJavaResponses(resps.responses());
+        scala.collection.immutable.List<T> scalaList = resps.responses().toList();
+        List<JavaResponse> jResps = new ArrayList<>(scalaList.size());
+        Iterator<T> it = scalaList.iterator();
+        while (it.hasNext()) {
+            jResps.add(new JavaResponse(it.next()));
+        }
         List<String> requestNames = jResps.stream().map(jResp -> jResp.request.name).collect(Collectors.toList());
         instrument(requestNames, isGroupBy, "java.response_conversion.latency.millis", resps.endTs());
         instrument(requestNames, isGroupBy, "java.overall.latency.millis", startTs);
@@ -153,24 +142,23 @@ public class JavaFetcher {
     });
   }
 
-  private Seq<Fetcher.Request> convertJavaRequestList(List<JavaRequest> requests, boolean isGroupBy, long startTs) {
-    ArrayBuffer<Fetcher.Request> scalaRequests = new ArrayBuffer<>();
+  private List<Fetcher.Request> convertJavaRequestList(List<JavaRequest> requests, boolean isGroupBy, long startTs) {
+    List<Fetcher.Request> scalaRequests = new ArrayList<>();
     for (JavaRequest request : requests) {
       Fetcher.Request convertedRequest = request.toScalaRequest();
-      scalaRequests.$plus$eq(convertedRequest);
+      scalaRequests.add(convertedRequest);
     }
-    Seq<Fetcher.Request> scalaRequestsSeq = scalaRequests.toSeq();
     instrument(requests.stream().map(jReq -> jReq.name).collect(Collectors.toList()), isGroupBy, "java.request_conversion.latency.millis", startTs);
-    return scalaRequestsSeq;
+    return scalaRequests;
   }
 
   public CompletableFuture<List<JavaResponse>> fetchGroupBys(List<JavaRequest> requests) {
     long startTs = System.currentTimeMillis();
     // Convert java requests to scala requests
-    Seq<Fetcher.Request> scalaRequests = convertJavaRequestList(requests, true, startTs);
+    List<Fetcher.Request> scalaRequests = convertJavaRequestList(requests, true, startTs);
 
     // Get responses from the fetcher
-    Future<FetcherResponseWithTs<Fetcher.Response>> scalaResponses = this.fetcher.withTs(this.fetcher.fetchGroupBys(scalaRequests));
+    Future<FetcherResponseWithTs<Fetcher.Response>> scalaResponses = this.fetcher.withTs(this.fetcher.fetchGroupBys(ScalaJavaConversions.toScala(scalaRequests)));
     // Convert responses to CompletableFuture
     return convertResponsesWithTs(scalaResponses, true, startTs);
   }
@@ -178,9 +166,9 @@ public class JavaFetcher {
   public CompletableFuture<List<JavaResponse>> fetchJoin(List<JavaRequest> requests) {
     long startTs = System.currentTimeMillis();
     // Convert java requests to scala requests
-    Seq<Fetcher.Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
+    List<Fetcher.Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
     // Get responses from the fetcher
-    Future<FetcherResponseWithTs<Fetcher.Response>> scalaResponses = this.fetcher.withTs(this.fetcher.fetchJoin(scalaRequests, Option.empty()));
+    Future<FetcherResponseWithTs<Fetcher.Response>> scalaResponses = this.fetcher.withTs(this.fetcher.fetchJoin(ScalaJavaConversions.toScala(scalaRequests), Option.empty()));
     // Convert responses to CompletableFuture
     return convertResponsesWithTs(scalaResponses, false, startTs);
   }
@@ -188,9 +176,9 @@ public class JavaFetcher {
   public CompletableFuture<List<JavaResponse>> fetchJoinBase64Avro(List<JavaRequest> requests) {
     long startTs = System.currentTimeMillis();
     // Convert java requests to scala requests
-    Seq<Fetcher.Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
+    List<Fetcher.Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
     // Get responses from the fetcher
-      Future<FetcherResponseWithTs<Fetcher.ResponseV2>> scalaResponses = this.fetcher.withTs(this.fetcher.fetchJoinV2(scalaRequests, Option.empty(), FeaturesResponseType.AvroString()));
+      Future<FetcherResponseWithTs<Fetcher.ResponseV2>> scalaResponses = this.fetcher.withTs(this.fetcher.fetchJoinV2(ScalaJavaConversions.toScala(scalaRequests), Option.empty(), FeaturesResponseType.AvroString()));
     // Convert responses to CompletableFuture
     return convertResponsesWithTs(scalaResponses, false, startTs);
   }
@@ -198,18 +186,17 @@ public class JavaFetcher {
   public CompletableFuture<List<JavaResponse>> fetchModelTransforms(List<JavaRequest> requests) {
     long startTs = System.currentTimeMillis();
     // Convert java requests to scala requests
-    Seq<Fetcher.Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
+    List<Fetcher.Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
     // Get responses from the fetcher
-    Future<FetcherResponseWithTs<Fetcher.Response>> scalaResponses = this.fetcher.withTs(this.fetcher.fetchModelTransforms(scalaRequests, Option.empty()));
+    Future<FetcherResponseWithTs<Fetcher.Response>> scalaResponses = this.fetcher.withTs(this.fetcher.fetchModelTransforms(ScalaJavaConversions.toScala(scalaRequests), Option.empty()));
     // Convert responses to CompletableFuture
     return convertResponsesWithTs(scalaResponses, false, startTs);
   }
 
   public CompletableFuture<List<String>> listJoins(boolean isOnline) {
     // Get responses from the fetcher
-    Future<Seq<String>> scalaResponses = this.fetcher.metadataStore().listJoins(isOnline);
     // convert to Java friendly types
-    return FutureConverters.toJava(scalaResponses).toCompletableFuture().thenApply(ScalaJavaConversions::toJava);
+    return FutureConverters.toJava(this.fetcher.metadataStore().listJoins(isOnline)).toCompletableFuture().thenApply(ScalaJavaConversions::toJava);
   }
 
   public JTry<JavaJoinSchemaResponse> fetchJoinSchema(String joinName) {

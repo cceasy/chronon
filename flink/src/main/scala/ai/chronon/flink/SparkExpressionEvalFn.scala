@@ -8,7 +8,6 @@ import org.apache.spark.sql.{Encoder, Row}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import scala.collection.Seq
 
 /** A Flink function that uses Chronon's CatalystUtil (via the SparkExpressionEval) to evaluate the Spark SQL expression.
   * This function is instantiated for a given type T (specific case class object, Thrift / Proto object).

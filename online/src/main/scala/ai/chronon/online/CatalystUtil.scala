@@ -28,7 +28,6 @@ import org.slf4j.LoggerFactory
 
 import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap}
 import java.util.function
-import scala.collection.Seq
 
 object CatalystUtil {
   lazy val session: SparkSession = {

@@ -1,12 +1,16 @@
 package build.flink
-import mill._
+import mill.api._
 import mill.scalalib._
 
-// Flink module
-object `package` extends build.BaseModule {
+// Flink module - supports both flink.test AND flink[2.13.17].test
+object `package` extends Cross[FlinkModule](build.Constants.scalaVersions) with FlinkModule {
+  override val crossValue = build.Constants.defaultScalaVersion
+}
+
+trait FlinkModule extends Cross.Module[String] with build.BaseModule {
   val flinkVersion = build.Constants.flinkVersion
 
-  def moduleDeps = Seq(build.aggregator, build.api, build.online)
+  def moduleDeps = Seq(build.aggregator(crossValue), build.api(crossValue), build.online(crossValue))
 
   def compileMvnDeps = build.Constants.providedFlinkDeps ++ Seq(
     mvn"org.apache.spark::spark-core:${build.Constants.sparkVersion}",
@@ -37,7 +41,8 @@ object `package` extends build.BaseModule {
   def prependShellScript = ""
   
   object test extends build.BaseTestModule {
-    def moduleDeps = Seq(build.flink)
+    def scalaVersion = crossValue
+    def moduleDeps = Seq(build.flink(crossValue))
     def forkArgs = build.Constants.commonTestForkArgs
     def mvnDeps = super.mvnDeps() ++ super.compileMvnDeps() ++ build.Constants.testDeps ++ Seq(
       mvn"org.apache.flink:flink-test-utils:$flinkVersion"

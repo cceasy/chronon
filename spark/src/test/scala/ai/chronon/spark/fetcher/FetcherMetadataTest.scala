@@ -45,7 +45,7 @@ class FetcherMetadataTest extends SparkTestBase {
     // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
     val singleFileDirWalker = new MetadataDirWalker(runFilesResource, acceptedEndPoints)
     val singleFileKvMap = singleFileDirWalker.run
-    val singleFilePut: Seq[Future[scala.collection.Seq[Boolean]]] = singleFileKvMap.toSeq.map { case (_, kvMap) =>
+    val singleFilePut: Seq[Future[scala.Seq[Boolean]]] = singleFileKvMap.toSeq.map { case (_, kvMap) =>
       singleFileMetadataStore.put(kvMap, singleFileDataSet)
     }
     singleFilePut.flatMap(putRequests => Await.result(putRequests, Duration.Inf))

@@ -8,7 +8,7 @@ import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
 import org.slf4j.{Logger, LoggerFactory}
 
-import scala.collection.{Map, Seq}
+import scala.collection.Map
 import scala.jdk.CollectionConverters._
 
 /*
@@ -22,7 +22,7 @@ class SourceJob(node: SourceWithFilterNode, metaData: MetaData, range: DateRange
   private val outputTable = metaData.outputTable
 
   def parseSkewKeys(jmap: java.util.Map[String, java.util.List[String]]): Option[Map[String, Seq[String]]] = {
-    Option(jmap).map(_.toScala.map { case (key, list) => key -> list.asScala }.toMap)
+    Option(jmap).map(_.toScala.map { case (key, list) => key -> list.asScala.toSeq }.toMap)
   }
 
   def run(): Unit = {
@@ -42,7 +42,7 @@ class SourceJob(node: SourceWithFilterNode, metaData: MetaData, range: DateRange
       .map(sf => {
         val copySource = source.deepCopy()
         val allFilters = source.query.wheres.asScala ++ Seq(sf)
-        copySource.query.setWheres(allFilters.toJava)
+        copySource.query.setWheres(allFilters.toSeq.toJava)
         copySource
       })
       .getOrElse(source)

@@ -1,10 +1,14 @@
 package build.service
-import mill._
+import mill.api._
 import mill.scalalib._
 
-// Service module (Java-based HTTP service)
-object `package` extends build.BaseModule {
-  def moduleDeps = Seq(build.online, build.api, build.service_commons)
+// Service module (Java-based HTTP service) - supports both service.test AND service[2.13.17].test
+object `package` extends Cross[ServiceModule](build.Constants.scalaVersions) with ServiceModule {
+  override val crossValue = build.Constants.defaultScalaVersion
+}
+
+trait ServiceModule extends Cross.Module[String] with build.BaseModule {
+  def moduleDeps = Seq(build.online(crossValue), build.api(crossValue), build.service_commons(crossValue))
 
   def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingDeps ++ build.Constants.utilityDeps ++
     Seq(
@@ -45,8 +49,8 @@ object `package` extends build.BaseModule {
   def prependShellScript = ""
 
   object test extends build.BaseJUnit4TestModule {
-    def moduleDeps = Seq(build.service)
-    def mvnDeps = Seq(
+    def moduleDeps = Seq(build.service(crossValue))
+    def mvnDeps = super.mvnDeps() ++ Seq(
       mvn"junit:junit:4.13.2",
       mvn"com.novocode:junit-interface:0.11",
       mvn"org.mockito:mockito-core:5.12.0",

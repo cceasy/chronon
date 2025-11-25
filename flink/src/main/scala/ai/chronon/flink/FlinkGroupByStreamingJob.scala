@@ -24,8 +24,6 @@ import org.apache.flink.streaming.api.windowing.triggers.Trigger
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow
 import org.apache.flink.util.OutputTag
 
-import scala.collection.Seq
-
 /** Flink job that processes a single streaming GroupBy and writes out the results (in the form of pre-aggregated tiles) to the KV store.
   *
   * @param eventSrc - Provider of a Flink Datastream[ ProjectedEvent ] for the given topic and groupBy. The event

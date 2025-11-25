@@ -1,12 +1,17 @@
 package build.cloud_gcp
-import mill.*
+import mill.api._
 import mill.scalalib.*
 
 import java.util.jar.JarFile
 
-// Cloud GCP module
-object `package` extends build.BaseModule {
-  def moduleDeps = Seq(build.spark, build.aggregator, build.api, build.online)
+// Cloud GCP module - supports both cloud_gcp.test AND cloud_gcp[2.13.17].test
+object `package` extends Cross[CloudGcpModule](build.Constants.scalaVersions) with CloudGcpModule {
+  // Provide default scala version for bracket-free access
+  override val crossValue = build.Constants.defaultScalaVersion
+}
+
+trait CloudGcpModule extends Cross.Module[String] with build.BaseModule {
+  def moduleDeps = Seq(build.spark(crossValue), build.aggregator(crossValue), build.api(crossValue), build.online(crossValue))
   def bigqueryJarFile = Task.Source(moduleDir / "iceberg-bigquery-1.11.0-SNAPSHOT.jar")
   
   def excludeJackson(dep: mill.scalalib.Dep): mill.scalalib.Dep = {
@@ -17,6 +22,11 @@ object `package` extends build.BaseModule {
       .exclude("com.fasterxml.jackson.datatype" -> "jackson-datatype-jsr310")    
   }
 
+  // Merge strategy for assembly
+  // Needed to avoid conflicts with Dataproc serverless
+//  override def assemblyRules = super.assemblyRules ++ Seq(
+//    Assembly.Rule.Relocate("org.apache.iceberg.gcp.bigquery.**", "shade.org.apache.iceberg.gcp.bigquery.@1")
+//  )
   override def unmanagedClasspath = Task {
     super.unmanagedClasspath() ++ Seq(bigqueryJarFile())
   }
@@ -44,11 +54,13 @@ object `package` extends build.BaseModule {
     mvn"com.fasterxml.jackson.core:jackson-databind:2.15.2",
     mvn"com.fasterxml.jackson.core:jackson-annotations:2.15.2",
     mvn"com.fasterxml.jackson.module::jackson-module-scala:2.15.2",
-    mvn"com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.15.2"
+    mvn"com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.15.2",
   ).map(_.forceVersion())
   
   object test extends build.BaseTestModule {
-    def moduleDeps = Seq(build.cloud_gcp, build.spark.test)
+    def scalaVersion = crossValue
+
+    def moduleDeps = Seq(build.cloud_gcp(crossValue), build.spark(crossValue).test)
     override def testFramework = "org.scalatest.tools.Framework"
     def forkArgs = build.Constants.commonTestForkArgs ++ Seq(
       "-Dspark.sql.adaptive.enabled=false",

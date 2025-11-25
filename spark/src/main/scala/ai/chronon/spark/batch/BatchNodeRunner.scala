@@ -8,6 +8,7 @@ import ai.chronon.online.KVStore.PutRequest
 import ai.chronon.online.{Api, KVStore}
 import ai.chronon.planner._
 import ai.chronon.spark.batch.iceberg.IcebergPartitionStatsExtractor
+import ai.chronon.spark.batch.{StagingQuery => StagingQueryUtil}
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.join.UnionJoin
 import ai.chronon.spark.submission.SparkSessionBuilder
@@ -169,10 +170,10 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
     require(stagingQuery.isSetStagingQuery, "StagingQueryNode must have a stagingQuery set")
     logger.info(s"Running staging query for '${metaData.name}'")
     val stagingQueryConf = stagingQuery.stagingQuery
-    val sq = StagingQuery.from(stagingQueryConf, range.end, tableUtils)
+    val sq = StagingQueryUtil.from(stagingQueryConf, range.end, tableUtils)
     sq.compute(
       range,
-      Option(stagingQuery.stagingQuery.setups).map(_.asScala).getOrElse(Seq.empty),
+      Option(stagingQuery.stagingQuery.setups).map(_.asScala.toSeq).getOrElse(Seq.empty),
       Option(true)
     )
 

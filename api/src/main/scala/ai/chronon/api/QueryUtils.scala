@@ -46,7 +46,7 @@ object QueryUtils {
   // to be present in the table that the generated query runs on.
   def build(selects: Map[String, String],
             table: String,
-            wheres: scala.collection.Seq[String],
+            wheres: Seq[String],
             fillIfAbsent: Option[Map[String, String]] = None): String = {
 
     val finalSelects = buildSelects(selects, fillIfAbsent)

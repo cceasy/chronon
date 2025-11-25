@@ -1,11 +1,15 @@
 package build.spark
-import mill._
+import mill.api._
 import mill.scalalib._
 import mill.api.PathRef
 
-// Spark module
-object `package` extends build.BaseModule {
-  def moduleDeps = Seq(build.aggregator, build.api, build.online)
+// Spark module - supports both spark.test AND spark[2.13.17].test
+object `package` extends Cross[SparkModule](build.Constants.scalaVersions) with SparkModule {
+  override val crossValue = build.Constants.defaultScalaVersion
+}
+
+trait SparkModule extends Cross.Module[String] with build.BaseModule {
+  def moduleDeps = Seq(build.aggregator(crossValue), build.api(crossValue), build.online(crossValue))
 
   def compileMvnDeps = build.Constants.sparkDeps
 
@@ -23,10 +27,12 @@ object `package` extends build.BaseModule {
   
   // Single test module for all Spark tests
   object test extends build.BaseTestModule {
-    def moduleDeps = Seq(build.spark, build.api.test, build.aggregator.test)
-    
+    def scalaVersion = crossValue
+
+    def moduleDeps = Seq(build.spark(crossValue), build.api(crossValue).test, build.aggregator(crossValue).test)
+
     override def testFramework = "org.scalatest.tools.Framework"
-    
+
     def mvnDeps = super.mvnDeps() ++ build.Constants.sparkDeps ++ build.Constants.testDeps ++ Seq(
       // Fix parquet version conflict - need 1.11.0+ for BROTLI field
 //      mvn"org.apache.parquet:parquet-common:1.15.2",
@@ -35,7 +41,7 @@ object `package` extends build.BaseModule {
       // Force consistent SLF4J version to avoid multi-release JAR issues
       mvn"org.slf4j:slf4j-api:1.7.36"
     )
-    
+
     def forkArgs = build.Constants.commonTestForkArgs ++ Seq(
       "-Dspark.sql.adaptive.enabled=false",
       "-Dspark.sql.adaptive.coalescePartitions.enabled=false",

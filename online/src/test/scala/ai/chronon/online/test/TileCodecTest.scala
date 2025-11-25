@@ -106,7 +106,7 @@ class TileCodecTest extends AnyFlatSpec {
   }
 
   def deepEquals(a: Any, b: Any): Boolean = (a, b) match {
-    case (arr1: Array[_], arr2: Array[_]) => arr1.deep == arr2.deep
+    case (arr1: Array[_], arr2: Array[_]) => arr1.toSeq == arr2.toSeq
     case (seq1: Seq[_], seq2: Seq[_]) =>
       seq1.size == seq2.size && seq1.zip(seq2).forall { case (x, y) => deepEquals(x, y) }
     case (list1: java.util.List[_], list2: java.util.List[_]) =>

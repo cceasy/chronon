@@ -11,7 +11,6 @@ import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.fetcher.{FetchContext, MetadataStore}
 import org.slf4j.LoggerFactory
 
-import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 

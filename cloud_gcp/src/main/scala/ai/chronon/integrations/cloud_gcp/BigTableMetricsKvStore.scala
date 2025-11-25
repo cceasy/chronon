@@ -16,7 +16,7 @@ import java.nio.charset.StandardCharsets
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, YearMonth, ZoneOffset}
 import scala.collection.concurrent.TrieMap
-import scala.collection.{Seq, mutable}
+import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
@@ -144,7 +144,7 @@ class BigTableMetricsKvStore(dataClient: BigtableDataClient,
                   KVStore.TimedValue(cell.getValue.toByteArray, cell.getTimestamp / 1000)
                 }
               }
-            }
+            }.toSeq
             KVStore.GetResponse(request, Success(timedValues))
           }
         }
@@ -233,7 +233,7 @@ class BigTableMetricsKvStore(dataClient: BigtableDataClient,
           row.getCells(ColumnFamilyString).asScala.map { cell =>
             KVStore.ListValue(row.getKey.toByteArray, cell.getValue.toByteArray)
           }
-        }
+        }.toSeq
 
         KVStore.ListResponse(request, Success(listValues), Map.empty)
       }

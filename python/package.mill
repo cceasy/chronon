@@ -43,14 +43,8 @@ object `package` extends PythonModule with RuffModule with PublishModule {
     )
   )
 
-  // used by pypi
-  // https://pypi.org/project/zipline-ai/
-  // Override publishVersion to check environment variable first, then fall back to constant
   override def publishVersion = Task {
-    Task.ctx().env.get("ZIPLINE_VERSION") match {
-      case Some(version) if version.nonEmpty => version
-      case _ => build.Constants.chrononVersion
-    }
+    sys.env.getOrElse("CHRONON_VERSION", "0.0.32")
   }
 
   def sources = super.sources() ++ generatedSources()

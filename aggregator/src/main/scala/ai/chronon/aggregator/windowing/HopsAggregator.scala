@@ -27,7 +27,6 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import java.util
-import scala.collection.Seq
 
 // generate hops per spec, (NOT per window) for the given hop sizes in the resolution
 // we use minQueryTs to construct only the relevant hops for a given hop size.

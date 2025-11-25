@@ -19,12 +19,12 @@ package ai.chronon.aggregator.row
 import ai.chronon.aggregator.base._
 import ai.chronon.api.Extensions.AggregationPartOps
 import ai.chronon.api.Extensions.OperationOps
+import ai.chronon.api.ScalaJavaConversions.IteratorOps
 import ai.chronon.api._
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.datasketches.frequencies.ErrorType
 
 import java.util
-import scala.collection.JavaConverters.asScalaIteratorConverter
 
 abstract class ColumnAggregator extends Serializable {
   def outputType: DataType
@@ -88,8 +88,10 @@ class VectorDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
     val inputVal = inputRow.get(columnIndices.input)
     if (inputVal == null) return null
     val anyIterator = inputVal match {
-      case inputSeq: collection.Seq[Any]  => inputSeq.iterator
-      case inputList: util.ArrayList[Any] => inputList.iterator().asScala
+      case inputList: util.ArrayList[Any]      => inputList.iterator().toScala
+      case inputSeq: scala.collection.Seq[Any] => inputSeq.iterator
+      case other =>
+        throw new IllegalArgumentException(s"Unsupported input type: ${other.getClass.getName}")
     }
     anyIterator.filter { _ != null }.map { toTypedInput }
   }

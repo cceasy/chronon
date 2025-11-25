@@ -22,7 +22,6 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
-import scala.collection.Seq
 
 object AsyncKVStoreWriter {
   val kvStoreConcurrency = 10

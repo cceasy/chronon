@@ -1,0 +1,34 @@
+name: Test Spark module
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'python/**'
+      - '**/*.md'
+      - 'scripts/**'
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - 'python/**'
+      - '**/*.md'
+      - 'scripts/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test_scala_2_12:
+    name: Test Spark (Scala 2.12.18)
+    uses: ./.github/workflows/reusable_spark_tests.yaml
+    with:
+      scala-version: "2.12.18"
+
+  test_scala_2_13:
+    name: Test Spark (Scala 2.13.17)
+    uses: ./.github/workflows/reusable_spark_tests.yaml
+    with:
+      scala-version: "2.13.17"

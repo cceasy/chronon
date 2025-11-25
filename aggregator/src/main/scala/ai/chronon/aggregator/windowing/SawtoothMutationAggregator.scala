@@ -20,7 +20,6 @@ import ai.chronon.api.Extensions.WindowOps
 import ai.chronon.api._
 
 import java.util
-import scala.collection.Seq
 import scala.collection.mutable
 
 case class BatchIr(collapsed: Array[Any], tailHops: HopsAggregator.IrMapType)

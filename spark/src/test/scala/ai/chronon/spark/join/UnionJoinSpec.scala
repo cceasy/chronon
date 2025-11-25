@@ -1,11 +1,8 @@
 package ai.chronon.spark.join
 
-import ai.chronon.spark.join.UnionJoin
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types._
 import org.scalatest.matchers.should.Matchers
-
-import scala.collection.{Seq, immutable}
 
 class UnionJoinSpec extends BaseJoinTest with Matchers {
 
@@ -57,8 +54,8 @@ class UnionJoinSpec extends BaseJoinTest with Matchers {
 
     // Check id = 1 (should have data from both left and right)
     val row1 = results.find(_.getInt(0) == 1).get
-    val leftDataArray1 = row1.getAs[Seq[Row]](1)
-    val rightDataArray1 = row1.getAs[Seq[Row]](2)
+    val leftDataArray1 = row1.getSeq[Row](1)
+    val rightDataArray1 = row1.getSeq[Row](2)
 
     // Id 1 should have 2 entries in both left and right
     leftDataArray1.length shouldBe 2
@@ -74,16 +71,16 @@ class UnionJoinSpec extends BaseJoinTest with Matchers {
 
     // Check id = 2 (should only have data from left)
     val row2 = results.find(_.getInt(0) == 2).get
-    val leftDataArray2 = row2.getAs[Seq[Row]](1)
-    val rightDataArray2 = row2.getAs[Seq[Row]](2)
+    val leftDataArray2 = row2.getSeq[Row](1)
+    val rightDataArray2 = row2.getSeq[Row](2)
 
     leftDataArray2.length shouldBe 1
     rightDataArray2.length shouldBe 0
 
     // Check id = 3 (should only have data from right)
     val row3 = results.find(_.getInt(0) == 3).get
-    val leftDataArray3 = row3.getAs[Seq[Row]](1)
-    val rightDataArray3 = row3.getAs[Seq[Row]](2)
+    val leftDataArray3 = row3.getSeq[Row](1)
+    val rightDataArray3 = row3.getSeq[Row](2)
 
     leftDataArray3.length shouldBe 0
     rightDataArray3.length shouldBe 1
@@ -126,32 +123,32 @@ class UnionJoinSpec extends BaseJoinTest with Matchers {
 
     // Find the row for id1=1, id2=A
     val row1A = results.find(r => r.getInt(0) == 1 && r.getString(1) == "A").get
-    val leftDataArray1A = row1A.getAs[Seq[Row]](2)
-    val rightDataArray1A = row1A.getAs[Seq[Row]](3)
+    val leftDataArray1A = row1A.getSeq[Row](2)
+    val rightDataArray1A = row1A.getSeq[Row](3)
 
     leftDataArray1A.length shouldBe 1
     rightDataArray1A.length shouldBe 1
 
     // Find the row for id1=1, id2=B
     val row1B = results.find(r => r.getInt(0) == 1 && r.getString(1) == "B").get
-    val leftDataArray1B = row1B.getAs[Seq[Row]](2)
-    val rightDataArray1B = row1B.getAs[Seq[Row]](3)
+    val leftDataArray1B = row1B.getSeq[Row](2)
+    val rightDataArray1B = row1B.getSeq[Row](3)
 
     leftDataArray1B.length shouldBe 1
     rightDataArray1B.length shouldBe 1
 
     // Find the row for id1=2, id2=B
     val row2B = results.find(r => r.getInt(0) == 2 && r.getString(1) == "B").get
-    val leftDataArray2B = row2B.getAs[Seq[Row]](2)
-    val rightDataArray2B = row2B.getAs[Seq[Row]](3)
+    val leftDataArray2B = row2B.getSeq[Row](2)
+    val rightDataArray2B = row2B.getSeq[Row](3)
 
     leftDataArray2B.length shouldBe 1
     rightDataArray2B.length shouldBe 0
 
     // Find the row for id1=2, id2=C
     val row2C = results.find(r => r.getInt(0) == 2 && r.getString(1) == "C").get
-    val leftDataArray2C = row2C.getAs[Seq[Row]](2)
-    val rightDataArray2C = row2C.getAs[Seq[Row]](3)
+    val leftDataArray2C = row2C.getSeq[Row](2)
+    val rightDataArray2C = row2C.getSeq[Row](3)
 
     leftDataArray2C.length shouldBe 0
     rightDataArray2C.length shouldBe 1
@@ -167,7 +164,7 @@ class UnionJoinSpec extends BaseJoinTest with Matchers {
         StructField("name", StringType),
         StructField("value", IntegerType),
         StructField("timestamp", IntegerType)
-      ).toSeq
+      )
     )
 
     // Create test data with some null timestamps
@@ -177,7 +174,7 @@ class UnionJoinSpec extends BaseJoinTest with Matchers {
       Row(2, "C", 300, 3000)
     )
     val leftDF = spark.createDataFrame(
-      spark.sparkContext.parallelize(leftData.toSeq),
+      spark.sparkContext.parallelize(leftData),
       leftSchema
     )
 
@@ -188,7 +185,7 @@ class UnionJoinSpec extends BaseJoinTest with Matchers {
         StructField("category", StringType),
         StructField("score", DoubleType),
         StructField("event_time", IntegerType)
-      ).toSeq
+      )
     )
 
     // Create test data with some null timestamps
@@ -198,7 +195,7 @@ class UnionJoinSpec extends BaseJoinTest with Matchers {
       Row(2, "Z", 70.5, 2500)
     )
     val rightDF = spark.createDataFrame(
-      spark.sparkContext.parallelize(rightData.toSeq),
+      spark.sparkContext.parallelize(rightData),
       rightSchema
     )
 
@@ -221,8 +218,8 @@ class UnionJoinSpec extends BaseJoinTest with Matchers {
 
     // Find row with id = 1
     val row1 = results.find(_.getInt(0) == 1).get
-    val leftDataArray1 = row1.getAs[Seq[Row]](1)
-    val rightDataArray1 = row1.getAs[Seq[Row]](2)
+    val leftDataArray1 = row1.getSeq[Row](1)
+    val rightDataArray1 = row1.getSeq[Row](2)
 
     // Should have filtered out null timestamps
     leftDataArray1.length shouldBe 1 // Only the row with timestamp 1000
@@ -230,8 +227,8 @@ class UnionJoinSpec extends BaseJoinTest with Matchers {
 
     // Find row with id = 2
     val row2 = results.find(_.getInt(0) == 2).get
-    val leftDataArray2 = row2.getAs[Seq[Row]](1)
-    val rightDataArray2 = row2.getAs[Seq[Row]](2)
+    val leftDataArray2 = row2.getSeq[Row](1)
+    val rightDataArray2 = row2.getSeq[Row](2)
 
     leftDataArray2.length shouldBe 1
     rightDataArray2.length shouldBe 1
@@ -270,8 +267,8 @@ class UnionJoinSpec extends BaseJoinTest with Matchers {
 
     // Find row with id = 1
     val row1 = results.find(_.getInt(0) == 1).get
-    val leftDataArray1 = row1.getAs[Seq[Row]](1)
-    val rightDataArray1 = row1.getAs[Seq[Row]](2)
+    val leftDataArray1 = row1.getSeq[Row](1)
+    val rightDataArray1 = row1.getSeq[Row](2)
 
     // Verify left array is sorted by timestamp (should be B, C, A)
     leftDataArray1.length shouldBe 3

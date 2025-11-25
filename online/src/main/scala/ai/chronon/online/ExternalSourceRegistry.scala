@@ -19,7 +19,7 @@ package ai.chronon.online
 import ai.chronon.api.Constants
 import ai.chronon.online.fetcher.Fetcher.{Request, Response}
 import ai.chronon.online.metrics.Metrics.Context
-import scala.collection.{Seq, mutable}
+import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
@@ -27,7 +27,7 @@ import scala.util.{Failure, Success}
 // keys and values need to match schema in ExternalSource - chronon will validate automatically
 class ExternalSourceRegistry extends Serializable {
   class ContextualHandler extends ExternalSourceHandler {
-    override def fetch(requests: Seq[Request]): Future[Seq[Response]] = {
+    override def fetch(requests: scala.Seq[Request]): Future[scala.Seq[Response]] = {
       Future(requests.map { request =>
         Response(request = request, values = Success(request.keys))
       })

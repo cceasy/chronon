@@ -26,7 +26,6 @@ import java.lang
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-import scala.collection.Seq
 
 /** Wrapper Flink aggregator around Chronon's RowAggregator. Relies on Flink to pass in
   * the correct set of events for the tile. As the aggregates produced by this function
