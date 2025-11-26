@@ -173,7 +173,8 @@ class GroupByFetcher(fetchContext: FetchContext, metadataStore: MetadataStore)
     val allRequestsToFetch: Seq[GetRequest] = groupByRequestToKvRequest.flatMap {
       case (_, Success(LambdaKvRequest(_, _, batchRequest, streamingRequestOpt, _, _))) =>
         // If a batch request is cached, don't include it in the list of requests to fetch because the batch IRs already cached
-        if (cachedRequests.contains(batchRequest)) streamingRequestOpt else Some(batchRequest) ++ streamingRequestOpt
+        if (cachedRequests.contains(batchRequest)) streamingRequestOpt.toSeq
+        else Some(batchRequest).toSeq ++ streamingRequestOpt.toSeq
 
       case _ => Seq.empty
     }
