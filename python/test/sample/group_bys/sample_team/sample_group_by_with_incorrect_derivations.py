@@ -13,12 +13,12 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.group_by import Aggregation, Derivation, GroupBy, Operation
 
 v1 = GroupBy(
-    sources=test_sources.staging_entities,
+    sources=sample_sources.staging_entities,
     keys=["s2CellId", "place_id"],
     aggregations=[
         Aggregation(input_column="impressed_unique_count_1d", operation=Operation.SUM),

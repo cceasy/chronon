@@ -17,12 +17,12 @@ Sample Non Production Join
 #     limitations under the License.
 
 from group_bys.sample_team import sample_non_prod_group_by
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.join import Join, JoinPart
 
 v1 = Join(
-    left=test_sources.event_source,
+    left=sample_sources.event_source,
     row_ids=["group_by_subject", "event"],
     right_parts=[
         JoinPart(

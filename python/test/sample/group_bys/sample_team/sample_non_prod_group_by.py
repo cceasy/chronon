@@ -12,7 +12,7 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.types import (
     Aggregation,
@@ -21,7 +21,7 @@ from ai.chronon.types import (
 )
 
 v1 = GroupBy(
-    sources=test_sources.event_source,
+    sources=sample_sources.event_source,
     keys=["group_by_subject"],
     aggregations=[
         Aggregation(input_column="event", operation=Operation.SUM, windows=["7d"]),

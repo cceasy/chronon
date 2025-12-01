@@ -13,7 +13,7 @@
 #     limitations under the License.
 
 from joins.sample_team.sample_join import v1
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.types import (
     Accuracy,
@@ -24,7 +24,7 @@ from ai.chronon.types import (
 from ai.chronon.utils import join_part_output_table_name
 
 v2 = GroupBy(
-    sources=test_sources.basic_event_source(
+    sources=sample_sources.basic_event_source(
         join_part_output_table_name(v1, v1.joinParts[0], True)
     ),
     keys=["s2CellId", "place_id"],

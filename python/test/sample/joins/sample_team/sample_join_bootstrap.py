@@ -21,7 +21,7 @@ from group_bys.sample_team import (
     event_sample_group_by,
     group_by_with_kwargs,
 )
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.types import BootstrapPart, Join, JoinPart, Query, selects
 
@@ -44,7 +44,7 @@ v2_join_parts = [
 ]
 
 v1 = Join(
-    left=test_sources.event_source,
+    left=sample_sources.event_source,
     right_parts=v1_join_parts,
     online=True,
     sample_percent=100.0,
@@ -65,7 +65,7 @@ v1 = Join(
 )
 
 v2 = Join(
-    left=test_sources.event_source,
+    left=sample_sources.event_source,
     right_parts=v1_join_parts + v2_join_parts,
     online=True,
     sample_percent=100.0,

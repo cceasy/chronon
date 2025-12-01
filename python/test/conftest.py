@@ -14,9 +14,26 @@
 #     limitations under the License.
 
 import os
+import sys
 
 import pytest
 
+
+# conftest.py or test_file.py
+
+import pytest
+import sys
+import copy
+
+@pytest.fixture(scope="module",autouse=True)
+def clean_imports_and_path():
+    original_path = copy.copy(sys.path)
+    modules_to_clean = ['joins', 'staging_queries', 'group_bys', 'models']
+    yield 
+    sys.path = original_path
+    for mod_name in modules_to_clean:
+        if mod_name in sys.modules:
+            del sys.modules[mod_name]
 
 @pytest.fixture
 def rootdir():

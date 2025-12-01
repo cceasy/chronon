@@ -21,13 +21,13 @@ from group_bys.sample_team import (
     event_sample_group_by,
     group_by_with_kwargs,
 )
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.repo.constants import RunMode
 from ai.chronon.types import EnvironmentVariables, Join, JoinPart
 
 v1 = Join(
-    left=test_sources.event_source,
+    left=sample_sources.event_source,
     row_ids=["subject", "group_by_subject"],
     right_parts=[
         JoinPart(

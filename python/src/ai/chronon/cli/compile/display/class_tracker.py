@@ -5,6 +5,7 @@ from rich.text import Text
 
 from ai.chronon.cli.compile.display.compiled_obj import CompiledObj
 from ai.chronon.cli.compile.display.diff_result import DiffResult
+from ai.chronon.cli.formatter import Format, format_print
 
 
 class ClassTracker:
@@ -12,13 +13,14 @@ class ClassTracker:
     Tracker object per class - Join, StagingQuery, GroupBy etc
     """
 
-    def __init__(self):
+    def __init__(self, format: Format = Format.TEXT):
         self.existing_objs: Dict[str, CompiledObj] = {}  # name to obj
         self.files_to_obj: Dict[str, List[Any]] = {}
         self.files_to_errors: Dict[str, List[Exception]] = {}
         self.new_objs: Dict[str, CompiledObj] = {}  # name to obj
         self.diff_result = DiffResult()
         self.deleted_names: List[str] = []
+        self.format = format
 
     def add_existing(self, obj: CompiledObj) -> None:
         self.existing_objs[obj.name] = obj
@@ -51,9 +53,9 @@ class ClassTracker:
                     n=2,
                 )
 
-                print(f"Updated object: {compiled.name} in file {compiled.file}")
-                print("".join(diff))
-                print("\n")
+                format_print(f"Updated object: {compiled.name} in file {compiled.file}", format=self.format)
+                format_print("".join(diff), format=self.format)
+                format_print("\n", format=self.format)
 
                 self.diff_result.updated.append(compiled.name)
 

@@ -5,6 +5,7 @@ import os
 
 from gen_thrift.api.ttypes import Conf
 
+from ai.chronon.cli.formatter import Format, format_print
 from ai.chronon.repo import (
     FOLDER_NAME_TO_CLASS,
     FOLDER_NAME_TO_CONF_TYPE,
@@ -72,29 +73,30 @@ def build_local_repo_hashmap(root_dir: str):
 
 
 def compute_and_upload_diffs(
-    branch: str, zipline_hub: ZiplineHub, local_repo_confs: dict[str, Conf]
+    branch: str, zipline_hub: ZiplineHub, local_repo_confs: dict[str, Conf], format: Format = Format.TEXT
 ):
     # Determine which confs are different from the ZiplineHub
     # Call Zipline hub with `names_and_hashes` as the argument to get back
     names_to_hashes = {name: local_conf.hash for name, local_conf in local_repo_confs.items()}
-    print(f"\n 🧮 Computed hashes for {len(names_to_hashes)} local files.")
+    format_print(f"\n 🧮 Computed hashes for {len(names_to_hashes)} local files.", format=format)
 
-    changed_conf_names = zipline_hub.call_diff_api(names_to_hashes)
+    changed_conf_names = zipline_hub.call_diff_api(names_to_hashes)["diff"]
 
     if not changed_conf_names:
-        print(f" ✅ Remote contains all local files. No need to upload '{branch}'.")
+        format_print(f" ✅ Remote contains all local files. No need to upload '{branch}'.", format=format)
         diffed_confs = {}
     else:
         unchanged = len(names_to_hashes) - len(changed_conf_names)
-        print(
-            f" 🔍 Detected {len(changed_conf_names)} changes on local branch '{branch}'. {unchanged} unchanged."
+        format_print(
+            f" 🔍 Detected {len(changed_conf_names)} changes on local branch '{branch}'. {unchanged} unchanged.",
+            format=format
         )
 
         # a list of names for diffed hashes on branch
         diffed_confs = {k: local_repo_confs[k] for k in changed_conf_names}
 
         conf_names_str = "\n    - ".join(diffed_confs.keys())
-        print(f"    - {conf_names_str}")
+        format_print(f"    - {conf_names_str}", format=format)
 
         diff_confs = []
         for _, conf in diffed_confs.items():
@@ -102,9 +104,9 @@ def compute_and_upload_diffs(
 
         # Make PUT request to ZiplineHub
         zipline_hub.call_upload_api(branch=branch, diff_confs=diff_confs)
-        print(f" ⬆️ Uploaded {len(diffed_confs)} changed confs to branch '{branch}'.")
+        format_print(f" ⬆️ Uploaded {len(diffed_confs)} changed confs to branch '{branch}'.", format=format)
 
     zipline_hub.call_sync_api(branch=branch, names_to_hashes=names_to_hashes)
 
-    print(f" ✅ {len(names_to_hashes)} hashes updated on branch '{branch}'.\n")
+    format_print(f" ✅ {len(names_to_hashes)} hashes updated on branch '{branch}'.\n", format=format)
     return diffed_confs

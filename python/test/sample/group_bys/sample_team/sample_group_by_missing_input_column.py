@@ -13,7 +13,7 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.group_by import (
     Aggregation,
@@ -22,7 +22,7 @@ from ai.chronon.group_by import (
 )
 
 v1 = GroupBy(
-    sources=test_sources.staging_entities,
+    sources=sample_sources.staging_entities,
     keys=["s2CellId", "place_id"],
     aggregations=[
         # Intentionally left out `input_column` to test error handling

@@ -17,7 +17,6 @@ from click.testing import CliRunner
 
 from ai.chronon.repo.hub_runner import hub
 
-
 class TestHubRunner:
     """Test cases for hub_runner backfill command."""
 
@@ -147,6 +146,7 @@ class TestHubRunner:
             '--conf', online_join_conf,
             '--no-use-auth',
         ])
+
         assert result.exit_code == 0
 
         # Verify the actual POST request was made with correct parameters

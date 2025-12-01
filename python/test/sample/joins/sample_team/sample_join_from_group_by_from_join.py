@@ -13,7 +13,7 @@
 #     limitations under the License.
 
 from group_bys.sample_team import sample_group_by_from_join_part
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.join import (
     Join,
@@ -21,7 +21,7 @@ from ai.chronon.join import (
 )
 
 v1 = Join(
-    left=test_sources.staging_entities,
+    left=sample_sources.staging_entities,
     row_ids=["s2CellId"],
     right_parts=[JoinPart(group_by=sample_group_by_from_join_part.v2)],
     output_namespace="sample_namespace",

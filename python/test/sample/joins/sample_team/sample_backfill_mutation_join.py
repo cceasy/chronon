@@ -17,12 +17,12 @@ Sample entity temporal accurate backfill (mutation)
 #     limitations under the License.
 
 from group_bys.sample_team import mutation_sample_group_by
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.join import Join, JoinPart
 
 v0 = Join(
-    left=test_sources.event_source,
+    left=sample_sources.event_source,
     row_ids="subject",
     right_parts=[JoinPart(group_by=mutation_sample_group_by.v0)],
     online=False,

@@ -1,11 +1,13 @@
 import os
+import json
 from unittest.mock import MagicMock, patch
 
+from click.testing import CliRunner
 from gen_thrift.api.ttypes import GroupBy, MetaData
 
 from ai.chronon.cli.compile import parse_configs
 from ai.chronon.cli.compile.compile_context import CompileContext
-from ai.chronon.repo.compile import __compile
+from ai.chronon.repo.compile import __compile, compile
 
 
 def test_compile(repo):
@@ -58,3 +60,33 @@ def test_parse_configs_relative_source_file():
     expected_relative_path = "group_bys/team/test_group_by.py"
     assert results[0].obj.metaData.sourceFile == expected_relative_path
     assert not results[0].obj.metaData.sourceFile.startswith("/")  # Should be relative, not absolute
+
+
+def test_compile_with_json_format(canary):
+    """Test that compile command with --format json returns valid JSON output."""
+    import sys
+    sys.path.append(canary)
+
+    runner = CliRunner()
+    result = runner.invoke(compile, [
+        '--chronon-root', canary,
+        '--format', 'json',
+        '--ignore-python-errors',
+        '--force',
+    ])
+
+    # Check that the command executed successfully
+    assert result.exit_code == 0, f"Command failed with output: {result.output}"
+
+    # Verify that the output is valid JSON (should be clean JSON with no tracebacks)
+    try:
+        output_json = json.loads(result.output)
+    except json.JSONDecodeError as e:
+        assert False, f"Output is not valid JSON: {result.output}\nError: {e}"
+
+    # Verify the JSON structure contains expected fields
+    assert "status" in output_json, f"Output missing 'status' field: {output_json}"
+    assert output_json["status"] == "success", f"Expected status 'success', got: {output_json['status']}"
+
+    assert "results" in output_json, f"Output missing 'results' field: {output_json}"
+    assert isinstance(output_json["results"], dict), f"'results' should be a dict, got: {type(output_json['results'])}"

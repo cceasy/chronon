@@ -13,7 +13,7 @@ Chronon Python API for materializing configs to be run by the Chronon Engine. Co
 Most fields are self explanatory. Time columns are expected to be in milliseconds (unixtime).
 
 ```python
-# File <repo>/sources/test_sources.py
+# File <repo>/sources/sample_sources.py
 from ai.chronon.query import (
   Query,
   select,
@@ -65,7 +65,7 @@ from ai.chronon.group_by import (
   Aggregation,
   DefaultAggregation,
 )
-from sources import test_sources
+from sources import sample_sources
 
 sum_cols = [f"active_{x}_days" for x in [30, 90, 120]]
 
@@ -114,11 +114,11 @@ A Join is a collection of feature values for the keys and (times if applicable) 
 ```python
 # File <repo>/joins/example_team/example_join.py
 from ai.chronon.join import Join, JoinPart
-from sources import test_sources
+from sources import sample_sources
 from group_bys.example_team import example_group_by
 
 v1 = Join(
-    left=test_sources.website__views,
+    left=sample_sources.website__views,
     right_parts=[
         JoinPart(group_by=example_group_by.v0),
     ],

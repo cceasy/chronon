@@ -14,13 +14,13 @@
 #     limitations under the License.
 
 from group_bys.sample_team.sample_group_by import require_backfill
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon import utils
 from ai.chronon.group_by import Aggregation, GroupBy, Operation
 
 v1 = GroupBy(
-    sources=test_sources.basic_event_source(require_backfill.table),
+    sources=sample_sources.basic_event_source(require_backfill.table),
     keys=["s2CellId", "place_id"],
     aggregations=[
         Aggregation(input_column="impressed_unique_count_1d_sum", operation=Operation.LAST),

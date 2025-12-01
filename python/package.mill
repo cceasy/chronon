@@ -63,15 +63,14 @@ object `package` extends PythonModule with RuffModule with PublishModule {
 
     override def sources = Task.Sources(moduleDir)
 
-    // Override forkEnv to set PYTHONPATH
+    // Override forkEnv to set PYTHONPATH for test isolation
     override def forkEnv: T[Map[String, String]] = Task {
 
       val generatedPath = build.python.generatedSources().head.path.toString
       val sourcePath = (moduleDir / os.up / "src").toString
-      val samplePath = (moduleDir / "sample").toString
-
+      // Note: samplePath removed from global PYTHONPATH to avoid conflicts with canary/
       super.forkEnv() ++ Map(
-        "PYTHONPATH" -> s"$generatedPath:$sourcePath:$samplePath"
+        "PYTHONPATH" -> s"$generatedPath:$sourcePath",
       )
 
     }

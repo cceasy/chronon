@@ -17,7 +17,7 @@ def handle_compile(func):
     def wrapper(*args, **kwargs):
         if not kwargs.get("skip_compile"):
             sys.path.append(kwargs.get("repo"))
-            __compile(kwargs.get("repo"))
+            __compile(kwargs.get("repo"), force=kwargs.get("force"))
         return func(*args, **kwargs)
     return wrapper
 

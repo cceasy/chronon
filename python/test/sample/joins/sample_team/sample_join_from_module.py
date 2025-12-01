@@ -20,12 +20,12 @@ from group_bys.sample_team import (
     entity_sample_group_by_from_module,
     sample_group_by_from_module,
 )
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.join import Join, JoinPart
 
 v1 = Join(
-    left=test_sources.staging_entities,
+    left=sample_sources.staging_entities,
     row_ids="impressed_unique_count_1d",
     right_parts=[
         JoinPart(

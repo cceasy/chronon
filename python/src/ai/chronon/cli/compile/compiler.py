@@ -14,6 +14,7 @@ from ai.chronon.cli.compile.compile_context import CompileContext, ConfigInfo
 from ai.chronon.cli.compile.display.compiled_obj import CompiledObj
 from ai.chronon.cli.compile.display.console import console
 from ai.chronon.cli.compile.parse_teams import merge_team_execution_info
+from ai.chronon.cli.formatter import Format, PromptException
 from ai.chronon.types import MetaData
 
 logger = logger.get_logger()
@@ -52,14 +53,26 @@ class Compiler:
         self.compile_context.validator.validate_changes(all_compiled_objects)
 
         # Show the nice display first
-        console.print(
-            self.compile_context.compile_status.render(self.compile_context.ignore_python_errors)
-        )
+        if self.compile_context.format != Format.JSON:
+            console.print(
+                self.compile_context.compile_status.render(self.compile_context.ignore_python_errors)
+            )
 
         # Check for confirmation before finalizing files
-        self.compile_context.validator.check_pending_changes_confirmation(
-            self.compile_context.compile_status
-        )
+        if not self.compile_context.force:
+            if self.compile_context.format != Format.JSON:
+                self.compile_context.validator.check_pending_changes_confirmation(
+                    self.compile_context.compile_status
+                )
+            else:
+                # In case of JSON format we need to prompt the user for confirmation if changes are not versioned.
+                non_version_changes = self.compile_context.validator._non_version_changes()
+                if non_version_changes:
+                    raise PromptException(prompt=f"The following configs are changing in-place (changing semantics without changing the version)."
+                    f" {', '.join([v.name for v in non_version_changes])} Do you want to proceed?", 
+                    options= ["yes", "no"],
+                    instructions="If 'yes' run with --force to proceed with the compilation."
+                    )
 
         # Only proceed with file operations if there are no compilation errors
         if not self._has_compilation_errors() or self.compile_context.ignore_python_errors:
@@ -151,11 +164,12 @@ class Compiler:
                 if co.errors:
                     error_dict[co.name] = co.errors
 
-                    for error in co.errors:
-                        self.compile_context.compile_status.print_live_console(
-                            f"Error processing conf {co.name}: {error}"
-                        )
-                        traceback.print_exception(type(error), error, error.__traceback__)
+                    if self.compile_context.format != Format.JSON:
+                        for error in co.errors:
+                            self.compile_context.compile_status.print_live_console(
+                                f"Error processing conf {co.name}: {error}"
+                            )
+                            traceback.print_exception(type(error), error, error.__traceback__)
 
                 else:
                     self._write_object(co)
@@ -163,11 +177,12 @@ class Compiler:
             else:
                 error_dict[co.file] = co.errors
 
-                self.compile_context.compile_status.print_live_console(
-                    f"Error processing file {co.file}: {co.errors}"
-                )
-                for error in co.errors:
-                    traceback.print_exception(type(error), error, error.__traceback__)
+                if self.compile_context.format != Format.JSON:
+                    self.compile_context.compile_status.print_live_console(
+                        f"Error processing file {co.file}: {co.errors}"
+                    )
+                    for error in co.errors:
+                        traceback.print_exception(type(error), error, error.__traceback__)
 
         return object_dict, error_dict
 

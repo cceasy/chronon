@@ -6,6 +6,7 @@ from rich.text import Text
 
 from ai.chronon.cli.compile.display.class_tracker import ClassTracker
 from ai.chronon.cli.compile.display.compiled_obj import CompiledObj
+from ai.chronon.cli.formatter import Format
 
 
 class CompileStatus:
@@ -13,7 +14,7 @@ class CompileStatus:
     Uses rich ui - to consolidate and sink the overview of the compile process to the bottom.
     """
 
-    def __init__(self, use_live: bool = False):
+    def __init__(self, use_live: bool = False, format: Format = Format.TEXT):
         self.cls_to_tracker: Dict[str, ClassTracker] = OrderedDict()
         self.use_live = use_live
         # we need vertical_overflow to be visible as the output gets cufoff when our output goes past the termianal window
@@ -21,6 +22,7 @@ class CompileStatus:
         if self.use_live:
             self.live = Live(refresh_per_second=50, vertical_overflow="visible")
             self.live.start()
+        self.format = format
 
     def print_live_console(self, msg: str):
         if self.use_live:
@@ -33,7 +35,7 @@ class CompileStatus:
             )
 
         if obj_type not in self.cls_to_tracker:
-            self.cls_to_tracker[obj_type] = ClassTracker()
+            self.cls_to_tracker[obj_type] = ClassTracker(format=self.format)
 
         self.cls_to_tracker[obj_type].add(compiled)
 
@@ -43,7 +45,7 @@ class CompileStatus:
         obj_type = existing_obj.obj_type
 
         if obj_type not in self.cls_to_tracker:
-            self.cls_to_tracker[obj_type] = ClassTracker()
+            self.cls_to_tracker[obj_type] = ClassTracker(format=self.format)
 
         self.cls_to_tracker[obj_type].add_existing(existing_obj)
 

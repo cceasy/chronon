@@ -16,7 +16,7 @@ Temporal entity sample group by
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.types import (
     Accuracy,
@@ -26,7 +26,7 @@ from ai.chronon.types import (
 )
 
 v0 = GroupBy(
-    sources=test_sources.entity_source,
+    sources=sample_sources.entity_source,
     keys=["group_by_subject"],
     aggregations=[Aggregation(input_column="entity", operation=Operation.LAST)],
     accuracy=Accuracy.TEMPORAL,

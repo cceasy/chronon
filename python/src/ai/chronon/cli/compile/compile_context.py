@@ -17,6 +17,7 @@ from ai.chronon.cli.compile.conf_validator import ConfValidator
 from ai.chronon.cli.compile.display.compile_status import CompileStatus
 from ai.chronon.cli.compile.display.compiled_obj import CompiledObj
 from ai.chronon.cli.compile.serializer import file2thrift
+from ai.chronon.cli.formatter import Format
 from ai.chronon.cli.logger import get_logger, require
 
 logger = get_logger()
@@ -31,11 +32,13 @@ class ConfigInfo:
 
 @dataclass
 class CompileContext:
-    def __init__(self, ignore_python_errors: bool = False):
+    def __init__(self, ignore_python_errors: bool = False, format: Format = Format.TEXT, force: bool = False):
         self.chronon_root: str = os.getenv("CHRONON_ROOT", os.getcwd())
-        self.teams_dict: Dict[str, Team] = teams.load_teams(self.chronon_root)
+        self.teams_dict: Dict[str, Team] = teams.load_teams(self.chronon_root, print=format != Format.JSON)
         self.compile_dir: str = "compiled"
         self.ignore_python_errors: bool = ignore_python_errors
+        self.format: Format = format
+        self.force: bool = force
 
         self.config_infos: List[ConfigInfo] = [
             ConfigInfo(folder_name="joins", cls=Join, config_type=ConfType.JOIN),
@@ -55,7 +58,7 @@ class CompileContext:
             ),  # only for team metadata
         ]
 
-        self.compile_status = CompileStatus(use_live=False)
+        self.compile_status = CompileStatus(use_live=False, format=format)
 
         self.existing_confs: Dict[Type, Dict[str, Any]] = {}
         for config_info in self.config_infos:

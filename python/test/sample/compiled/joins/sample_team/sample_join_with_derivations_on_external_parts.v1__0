@@ -1,4 +1,30 @@
 {
+  "derivations": [
+    {
+      "expression": "ext_test_external_source_value_str",
+      "name": "value_str"
+    },
+    {
+      "expression": "ext_test_external_source_value_long",
+      "name": "value_long"
+    },
+    {
+      "expression": "ext_test_external_source_value_bool",
+      "name": "value_bool"
+    },
+    {
+      "expression": "ext_contextual_context_str",
+      "name": "context_str"
+    },
+    {
+      "expression": "ext_contextual_context_long",
+      "name": "context_long"
+    },
+    {
+      "expression": "*",
+      "name": "*"
+    }
+  ],
   "joinParts": [
     {
       "groupBy": {
@@ -109,7 +135,7 @@
       "keyMapping": {
         "subject": "group_by_subject"
       },
-      "useLongNames": 1
+      "useLongNames": 0
     },
     {
       "groupBy": {
@@ -212,131 +238,7 @@
       "keyMapping": {
         "subject": "group_by_subject"
       },
-      "useLongNames": 1
-    },
-    {
-      "groupBy": {
-        "aggregations": [
-          {
-            "argMap": {},
-            "inputColumn": "event",
-            "operation": 7
-          },
-          {
-            "argMap": {
-              "k": "20",
-              "percentiles": "[0.5]"
-            },
-            "inputColumn": "event",
-            "operation": 12
-          },
-          {
-            "argMap": {},
-            "inputColumn": "event",
-            "operation": 7,
-            "windows": [
-              {
-                "length": 7,
-                "timeUnit": 1
-              }
-            ]
-          }
-        ],
-        "keyColumns": [
-          "group_by_subject"
-        ],
-        "metaData": {
-          "columnHashes": {
-            "event_approx_percentile": "b2c16717caacedd00470f1109af80b57",
-            "event_sum": "b2c16717caacedd00470f1109af80b57",
-            "event_sum_7d": "b2c16717caacedd00470f1109af80b57",
-            "group_by_subject": "ec716d5785d3d1d2787535d9c4c67af6"
-          },
-          "executionInfo": {
-            "conf": {
-              "common": {
-                "spark.chronon.partition.column": "_test_column_sample"
-              }
-            },
-            "env": {
-              "common": {
-                "CUSTOMER_ID": "canary",
-                "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
-                "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
-                "GCP_PROJECT_ID": "canary-443022",
-                "GCP_REGION": "us-central1",
-                "VERSION": "latest"
-              },
-              "modeEnvironments": {
-                "backfill": {
-                  "CUSTOMER_ID": "canary",
-                  "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
-                  "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
-                  "GCP_PROJECT_ID": "canary-443022",
-                  "GCP_REGION": "us-central1",
-                  "VERSION": "latest"
-                },
-                "streaming": {
-                  "CUSTOMER_ID": "canary",
-                  "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
-                  "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
-                  "GCP_PROJECT_ID": "canary-443022",
-                  "GCP_REGION": "us-central1",
-                  "VERSION": "latest"
-                },
-                "upload": {
-                  "CUSTOMER_ID": "canary",
-                  "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
-                  "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
-                  "GCP_PROJECT_ID": "canary-443022",
-                  "GCP_REGION": "us-central1",
-                  "VERSION": "latest"
-                }
-              }
-            },
-            "historicalBackfill": 0,
-            "scheduleCron": "@daily"
-          },
-          "name": "sample_team.group_by_with_kwargs.v1__0",
-          "online": 1,
-          "outputNamespace": "test",
-          "team": "sample_team",
-          "version": "0"
-        },
-        "sources": [
-          {
-            "events": {
-              "query": {
-                "endPartition": "2021-04-09",
-                "selects": {
-                  "event": "event_expr_old_version",
-                  "group_by_subject": "group_by_subject_expr_old_version"
-                },
-                "startPartition": "2021-03-01",
-                "timeColumn": "UNIX_TIMESTAMP(ts) * 1000"
-              },
-              "table": "sample_namespace.sample_table_group_by"
-            }
-          },
-          {
-            "events": {
-              "query": {
-                "selects": {
-                  "event": "possibly_different_event_expr",
-                  "group_by_subject": "possibly_different_group_by_subject_expr"
-                },
-                "startPartition": "2021-03-01",
-                "timeColumn": "__timestamp"
-              },
-              "table": "sample_namespace.another_sample_table_group_by"
-            }
-          }
-        ]
-      },
-      "keyMapping": {
-        "subject": "group_by_subject"
-      },
-      "useLongNames": 1
+      "useLongNames": 0
     }
   ],
   "left": {
@@ -356,22 +258,27 @@
   },
   "metaData": {
     "columnHashes": {
+      "context_long": "140525ce539df371e7fcd290fdfc4bb6",
+      "context_str": "02bcf42e765fb90bdd698ab41b868d0e",
       "event": "af9f70df13e4452969624323f374efa6",
+      "ext_contextual_context_long": "ext_contextual_context_long",
+      "ext_contextual_context_str": "ext_contextual_context_str",
+      "ext_test_external_source_value_bool": "ext_test_external_source_value_bool",
+      "ext_test_external_source_value_long": "ext_test_external_source_value_long",
+      "ext_test_external_source_value_str": "ext_test_external_source_value_str",
       "group_by_subject": "1380b67281f4b818439a8d8588238e4f",
-      "sample_team_entity_sample_group_by_from_module_v1__0_entity_last": "d3346a02fcefdad51bf133734e217941",
-      "sample_team_entity_sample_group_by_from_module_v1__0_entity_last_7d": "d3346a02fcefdad51bf133734e217941",
-      "sample_team_event_sample_group_by_v1__0_event_approx_percentile": "e4ac9ad1b922e644c3fe46365d74ab34",
-      "sample_team_event_sample_group_by_v1__0_event_sum": "e4ac9ad1b922e644c3fe46365d74ab34",
-      "sample_team_event_sample_group_by_v1__0_event_sum_7d": "e4ac9ad1b922e644c3fe46365d74ab34",
-      "sample_team_group_by_with_kwargs_v1__0_event_approx_percentile": "cdd9c299666f99ba87beb10cb78e617e",
-      "sample_team_group_by_with_kwargs_v1__0_event_sum": "cdd9c299666f99ba87beb10cb78e617e",
-      "sample_team_group_by_with_kwargs_v1__0_event_sum_7d": "cdd9c299666f99ba87beb10cb78e617e",
+      "group_by_subject_entity_last": "d3346a02fcefdad51bf133734e217941",
+      "group_by_subject_entity_last_7d": "d3346a02fcefdad51bf133734e217941",
+      "group_by_subject_event_approx_percentile": "e4ac9ad1b922e644c3fe46365d74ab34",
+      "group_by_subject_event_sum": "e4ac9ad1b922e644c3fe46365d74ab34",
+      "group_by_subject_event_sum_7d": "e4ac9ad1b922e644c3fe46365d74ab34",
       "subject": "2078558b2758b6bd5421b8d2df2cef0e",
-      "ts": "2932897efedd17abaf8481deecaa3786"
+      "ts": "2932897efedd17abaf8481deecaa3786",
+      "value_bool": "eb3d7dee032e20310fe74aece37fa0c6",
+      "value_long": "aed6fe6ccaf55fc6314361abce2c78a3",
+      "value_str": "99b6a1351b0677683d6ccb94efc487e7"
     },
-    "consistencyCheck": 1,
-    "consistencySamplePercent": 5.0,
-    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_sample_namespace_sample_table_group_by_with_offset_0\", \"spec\": \"sample_namespace.sample_table_group_by/_test_column_sample={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_sample_namespace_sample_table_group_by_with_offset_0\", \"spec\": \"sample_namespace.sample_table_group_by/_test_column_sample={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_sample_table_sample_entity_snapshot_with_offset_0\", \"spec\": \"sample_table.sample_entity_snapshot/_test_column_sample={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_sample_table_sample_entity_mutations_hr_00_00_with_offset_0\", \"spec\": \"sample_table.sample_entity_mutations/hr=00:00/_test_column_sample={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_sample_namespace_sample_table_group_by_with_offset_0\", \"spec\": \"sample_namespace.sample_table_group_by/_test_column_sample={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_sample_namespace_another_sample_table_group_by_with_offset_0\", \"spec\": \"sample_namespace.another_sample_table_group_by/_test_column_sample={{ macros.ds_add(ds, 0) }}\"}]}",
+    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_sample_namespace_sample_table_group_by_with_offset_0\", \"spec\": \"sample_namespace.sample_table_group_by/_test_column_sample={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_sample_namespace_sample_table_group_by_with_offset_0\", \"spec\": \"sample_namespace.sample_table_group_by/_test_column_sample={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_sample_table_sample_entity_snapshot_with_offset_0\", \"spec\": \"sample_table.sample_entity_snapshot/_test_column_sample={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_sample_table_sample_entity_mutations_hr_00_00_with_offset_0\", \"spec\": \"sample_table.sample_entity_mutations/hr=00:00/_test_column_sample={{ macros.ds_add(ds, 0) }}\"}]}",
     "executionInfo": {
       "conf": {
         "common": {
@@ -390,7 +297,6 @@
         "modeEnvironments": {
           "backfill": {
             "CUSTOMER_ID": "canary",
-            "EXECUTOR_MEMORY": "9G",
             "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
             "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
             "GCP_PROJECT_ID": "canary-443022",
@@ -417,18 +323,107 @@
       },
       "scheduleCron": "@daily"
     },
-    "name": "sample_team.sample_online_join.v1__0",
-    "online": 1,
+    "name": "sample_team.sample_join_with_derivations_on_external_parts.v1__0",
+    "online": 0,
     "outputNamespace": "test",
     "production": 0,
     "samplePercent": 100.0,
-    "sourceFile": "joins/sample_team/sample_online_join.py",
+    "sourceFile": "joins/sample_team/sample_join_with_derivations_on_external_parts.py",
     "team": "sample_team",
     "version": "0"
   },
-  "rowIds": [
-    "subject",
-    "group_by_subject"
+  "onlineExternalParts": [
+    {
+      "source": {
+        "keySchema": {
+          "kind": 13,
+          "name": "ext_test_external_source_keys",
+          "params": [
+            {
+              "dataType": {
+                "kind": 4
+              },
+              "name": "key"
+            }
+          ]
+        },
+        "metadata": {
+          "name": "test_external_source",
+          "team": "chronon"
+        },
+        "valueSchema": {
+          "kind": 13,
+          "name": "ext_test_external_source_values",
+          "params": [
+            {
+              "dataType": {
+                "kind": 7
+              },
+              "name": "value_str"
+            },
+            {
+              "dataType": {
+                "kind": 4
+              },
+              "name": "value_long"
+            },
+            {
+              "dataType": {
+                "kind": 0
+              },
+              "name": "value_bool"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "source": {
+        "keySchema": {
+          "kind": 13,
+          "name": "contextual_keys",
+          "params": [
+            {
+              "dataType": {
+                "kind": 7
+              },
+              "name": "context_str"
+            },
+            {
+              "dataType": {
+                "kind": 4
+              },
+              "name": "context_long"
+            }
+          ]
+        },
+        "metadata": {
+          "name": "contextual",
+          "team": "chronon"
+        },
+        "valueSchema": {
+          "kind": 13,
+          "name": "contextual_values",
+          "params": [
+            {
+              "dataType": {
+                "kind": 7
+              },
+              "name": "context_str"
+            },
+            {
+              "dataType": {
+                "kind": 4
+              },
+              "name": "context_long"
+            }
+          ]
+        }
+      }
+    }
   ],
-  "useLongNames": 1
+  "rowIds": [
+    "subject"
+  ],
+  "useLongNames": 0
 }

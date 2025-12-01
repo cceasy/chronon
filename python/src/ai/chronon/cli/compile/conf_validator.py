@@ -672,15 +672,17 @@ class ConfValidator(object):
             return  # No pending changes
 
         # Check if we need user confirmation (only for non-version-bump changes)
-        non_version_changes = self._filter_non_version_changes(
-            self._pending_changes["changed"] + self._pending_changes["deleted"],
-            self._pending_changes["added"],
-        )
-
-        if non_version_changes:
+        if self._non_version_changes():
             if not self._prompt_user_confirmation():
                 console.print("❌ Compilation cancelled by user.")
                 sys.exit(1)
+
+    def _non_version_changes(self):
+        """Return list of changes that are NOT version bumps and require confirmation."""
+        return self._filter_non_version_changes(
+            self._pending_changes["changed"] + self._pending_changes["deleted"],
+            self._pending_changes["added"],
+        )
 
     def _has_compilation_errors(self, compile_status):
         """Check if there are any compilation errors across all class trackers."""

@@ -21,12 +21,12 @@ from group_bys.sample_team import (
     event_sample_group_by,
     event_with_derivations,
 )
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.join import Derivation, Join, JoinPart
 
 v2 = Join(
-    left=test_sources.event_source,
+    left=sample_sources.event_source,
     row_ids="event",
     right_parts=[
         JoinPart(
@@ -54,7 +54,7 @@ v2 = Join(
 
 # V2 includes GroupBys with Derivations
 v3 = Join(
-    left=test_sources.event_source,
+    left=sample_sources.event_source,
     row_ids=["subject"],
     right_parts=[
         JoinPart(

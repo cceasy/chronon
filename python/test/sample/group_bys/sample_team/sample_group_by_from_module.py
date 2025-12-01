@@ -16,7 +16,7 @@ Sample group by
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.types import (
     Aggregation,
@@ -26,8 +26,8 @@ from ai.chronon.types import (
 
 v1 = GroupBy(
     sources=[
-        test_sources.events_until_20210409,
-        test_sources.events_after_20210409,
+        sample_sources.events_until_20210409,
+        sample_sources.events_after_20210409,
     ],
     keys=["group_by_subject"],
     aggregations=[

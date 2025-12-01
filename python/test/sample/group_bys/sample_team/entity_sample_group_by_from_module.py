@@ -16,12 +16,12 @@ Sample group by
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.types import Aggregation, GroupBy, Operation
 
 v1 = GroupBy(
-    sources=test_sources.entity_source,
+    sources=sample_sources.entity_source,
     keys=["group_by_subject"],
     aggregations=[
         Aggregation(input_column="entity", operation=Operation.LAST),

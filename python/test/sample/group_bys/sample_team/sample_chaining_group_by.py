@@ -20,7 +20,7 @@ from group_bys.sample_team import (
     entity_sample_group_by_from_module,
     event_sample_group_by,
 )
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.types import (
     Accuracy,
@@ -35,7 +35,7 @@ from ai.chronon.types import (
 )
 
 parent_join = Join(
-    left=test_sources.event_source,
+    left=sample_sources.event_source,
     row_ids="event",
     right_parts=[
         JoinPart(

@@ -1,11 +1,11 @@
 
-from sources import test_sources
+from sources import sample_sources
 
 from ai.chronon.group_by import Aggregation, Derivation, GroupBy, Operation
 
 # V1 does not include base fields
 v1 = GroupBy(
-    sources=test_sources.event_source,
+    sources=sample_sources.event_source,
     keys=["group_by_subject"],
     aggregations=[
         Aggregation(input_column="event", operation=Operation.SUM, windows=["7d"]),
@@ -22,7 +22,7 @@ v1 = GroupBy(
 
 # V2 dooes include base fields
 v2 = GroupBy(
-    sources=test_sources.event_source,
+    sources=sample_sources.event_source,
     keys=["group_by_subject"],
     aggregations=[
         Aggregation(input_column="subject", operation=Operation.SUM, windows=["7d"]),
