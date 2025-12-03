@@ -41,8 +41,8 @@ class ModelTransformsPlannerTest extends AnyFlatSpec with Matchers {
     val planner = new ModelTransformsPlanner(modelTransforms)
     val plan = planner.buildPlan
 
-    // Should create plan successfully with expected number of nodes
-    plan.nodes.asScala should have size 1
+    // Should create plan successfully with both upload and backfill nodes
+    plan.nodes.asScala should have size 2
 
     // Find the upload node
     val uploadNode = plan.nodes.asScala.find(_.content.isSetModelTransformsUpload)
@@ -55,14 +55,13 @@ class ModelTransformsPlannerTest extends AnyFlatSpec with Matchers {
     uploadNode.get.content.getModelTransformsUpload.modelTransforms should not be null
 
     // Verify metadata
-    uploadNode.get.metaData.name should equal(s"${modelTransforms.metaData.name}__upload")
+    uploadNode.get.metaData.name should equal(s"${modelTransforms.metaData.name}__model_transforms_upload")
 
-    // Verify no table dependencies for non-JoinSource sources
+    // Verify no table dependencies for upload node with non-JoinSource sources
     val deps = uploadNode.get.metaData.executionInfo.tableDependencies.asScala
     deps should be(empty)
 
-    // Verify terminal nodes
-    plan.terminalNodeNames.asScala.size shouldBe 1
+    // Verify terminal nodes include DEPLOY
     plan.terminalNodeNames.containsKey(Mode.DEPLOY) shouldBe true
     plan.terminalNodeNames.get(Mode.DEPLOY) shouldBe uploadNode.get.metaData.name
   }
@@ -89,8 +88,8 @@ class ModelTransformsPlannerTest extends AnyFlatSpec with Matchers {
     val planner = new ModelTransformsPlanner(modelTransforms)
     val plan = planner.buildPlan
 
-    // Should create plan successfully
-    plan.nodes.asScala should have size 1
+    // Should create plan successfully with both upload and backfill nodes
+    plan.nodes.asScala should have size 2
 
     val uploadNode = plan.nodes.asScala.find(_.content.isSetModelTransformsUpload)
     uploadNode should be(defined)
@@ -98,5 +97,194 @@ class ModelTransformsPlannerTest extends AnyFlatSpec with Matchers {
     // Verify the node has dependencies (should include the upstream join metadata upload)
     val deps = uploadNode.get.metaData.executionInfo.tableDependencies.asScala
     deps should not be empty
+  }
+
+  it should "create both backfill and upload nodes" in {
+    val source = B.Source.events(
+      query = B.Query(),
+      table = "test_namespace.test_table"
+    )
+
+    val modelTransforms = buildModelTransforms("test_model_transforms", source)
+    val planner = new ModelTransformsPlanner(modelTransforms)
+    val plan = planner.buildPlan
+
+    // Should create plan with both nodes
+    plan.nodes.asScala should have size 2
+
+    // Find both nodes
+    val uploadNode = plan.nodes.asScala.find(_.content.isSetModelTransformsUpload)
+    val backfillNode = plan.nodes.asScala.find(_.content.isSetModelTransformsBackfill)
+
+    uploadNode should be(defined)
+    backfillNode should be(defined)
+
+    // Verify metadata
+    uploadNode.get.metaData.name should equal(s"${modelTransforms.metaData.name}__model_transforms_upload")
+    backfillNode.get.metaData.name should equal(s"${modelTransforms.metaData.name}__model_transforms_backfill")
+
+    // Verify terminal nodes
+    plan.terminalNodeNames.asScala.size shouldBe 2
+    plan.terminalNodeNames.containsKey(Mode.DEPLOY) shouldBe true
+    plan.terminalNodeNames.containsKey(Mode.BACKFILL) shouldBe true
+    plan.terminalNodeNames.get(Mode.DEPLOY) shouldBe uploadNode.get.metaData.name
+    plan.terminalNodeNames.get(Mode.BACKFILL) shouldBe backfillNode.get.metaData.name
+  }
+
+  it should "create backfill node with table dependencies for events source" in {
+    val source = B.Source.events(
+      query = B.Query(),
+      table = "test_namespace.test_table"
+    )
+
+    val modelTransforms = buildModelTransforms("test_model_transforms", source)
+    val planner = new ModelTransformsPlanner(modelTransforms)
+    val backfillNode = planner.backfillNode
+
+    // Verify backfill node content
+    backfillNode.content.isSetModelTransformsBackfill shouldBe true
+    backfillNode.content.getModelTransformsBackfill.modelTransforms should not be null
+
+    // Verify table dependencies for events source
+    val deps = backfillNode.metaData.executionInfo.tableDependencies.asScala
+    deps should have size 1
+    deps.head.tableInfo.table shouldBe "test_namespace.test_table"
+  }
+
+  it should "create backfill node with table dependencies for join source" in {
+    val joinOutputTable = "test_namespace.test_join_output"
+    val joinMetadata = B.MetaData(
+      name = "test_join",
+      namespace = "test_namespace"
+    )
+    val outputTableInfo = new TableInfo().setTable(joinOutputTable)
+    val executionInfo = new ExecutionInfo().setOutputTableInfo(outputTableInfo)
+    joinMetadata.setExecutionInfo(executionInfo)
+
+    val join = B.Join(
+      left = B.Source.events(
+        query = B.Query(),
+        table = "test_namespace.events_table"
+      ),
+      joinParts = Seq.empty,
+      metaData = joinMetadata
+    )
+
+    val joinSource = B.Source.joinSource(
+      join = join,
+      query = B.Query()
+    )
+
+    val modelTransforms = buildModelTransforms("test_model_transforms_with_join", joinSource)
+    val planner = new ModelTransformsPlanner(modelTransforms)
+    val backfillNode = planner.backfillNode
+
+    // Verify backfill node content
+    backfillNode.content.isSetModelTransformsBackfill shouldBe true
+
+    // Verify table dependencies point to join output table
+    val deps = backfillNode.metaData.executionInfo.tableDependencies.asScala
+    deps should have size 1
+    deps.head.tableInfo.table shouldBe joinOutputTable
+  }
+
+  it should "preserve join source query in table dependencies" in {
+    val joinOutputTable = "test_namespace.test_join_output"
+    val joinMetadata = B.MetaData(
+      name = "test_join",
+      namespace = "test_namespace"
+    )
+    val outputTableInfo = new TableInfo().setTable(joinOutputTable)
+    val executionInfo = new ExecutionInfo().setOutputTableInfo(outputTableInfo)
+    joinMetadata.setExecutionInfo(executionInfo)
+
+    val join = B.Join(
+      left = B.Source.events(
+        query = B.Query(),
+        table = "test_namespace.events_table"
+      ),
+      joinParts = Seq.empty,
+      metaData = joinMetadata
+    )
+
+    val joinSourceQuery = B.Query(
+      selects = Map(
+        "user_id" -> "user_id",
+        "renamed_col" -> "original_col"
+      )
+    )
+
+    val joinSource = B.Source.joinSource(
+      join = join,
+      query = joinSourceQuery
+    )
+
+    val modelTransforms = buildModelTransforms("test_model_transforms_with_query", joinSource)
+    val planner = new ModelTransformsPlanner(modelTransforms)
+    val backfillNode = planner.backfillNode
+
+    // Verify table dependencies include the query information
+    val deps = backfillNode.metaData.executionInfo.tableDependencies.asScala
+    deps should have size 1
+
+    val tableDep = deps.head
+    tableDep.tableInfo.table shouldBe joinOutputTable
+  }
+
+  it should "handle multiple sources in backfill node" in {
+    val source1 = B.Source.events(
+      query = B.Query(),
+      table = "test_namespace.test_table_1"
+    )
+
+    val joinMetadata = B.MetaData(
+      name = "test_join",
+      namespace = "test_namespace"
+    )
+    val outputTableInfo = new TableInfo().setTable("test_namespace.test_join_output")
+    val executionInfo = new ExecutionInfo().setOutputTableInfo(outputTableInfo)
+    joinMetadata.setExecutionInfo(executionInfo)
+
+    val join = B.Join(
+      left = B.Source.events(
+        query = B.Query(),
+        table = "test_namespace.events_table"
+      ),
+      joinParts = Seq.empty,
+      metaData = joinMetadata
+    )
+
+    val source2 = B.Source.joinSource(
+      join = join,
+      query = B.Query()
+    )
+
+    val testModel = B.Model(
+      metaData = B.MetaData(name = "test_model"),
+      inferenceSpec = B.InferenceSpec(
+        modelBackend = ModelBackend.VertexAI,
+        modelBackendParams = Map("project" -> "test-project")
+      )
+    )
+
+    val modelTransforms = B.ModelTransforms(
+      metaData = B.MetaData(
+        name = "test_model_transforms_multi_source",
+        namespace = "test_namespace"
+      ),
+      sources = Seq(source1, source2),
+      models = Seq(testModel)
+    )
+
+    val planner = new ModelTransformsPlanner(modelTransforms)
+    val backfillNode = planner.backfillNode
+
+    // Verify table dependencies include both sources
+    val deps = backfillNode.metaData.executionInfo.tableDependencies.asScala
+    deps should have size 2
+
+    val tableNames = deps.map(_.tableInfo.table).toSet
+    tableNames should contain("test_namespace.test_table_1")
+    tableNames should contain("test_namespace.test_join_output")
   }
 }

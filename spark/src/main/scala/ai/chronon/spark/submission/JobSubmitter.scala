@@ -221,6 +221,7 @@ object JobSubmitterConstants {
   val GcpBigtableInstanceIdEnvVar = "GCP_BIGTABLE_INSTANCE_ID"
   val GcpProjectIdEnvVar = "GCP_PROJECT_ID"
   val GcpRegionEnvVar = "GCP_REGION"
+  val GcpLocationEnvVar = "GCP_LOCATION"
   val GcpDataprocClusterNameEnvVar = "GCP_DATAPROC_CLUSTER_NAME"
   val GcpEnableUploadKVClientEnvVar = "ENABLE_UPLOAD_CLIENTS"
 

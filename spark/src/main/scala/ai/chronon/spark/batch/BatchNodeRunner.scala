@@ -12,7 +12,7 @@ import ai.chronon.spark.batch.{StagingQuery => StagingQueryUtil}
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.join.UnionJoin
 import ai.chronon.spark.submission.SparkSessionBuilder
-import ai.chronon.spark.{GroupBy, GroupByUpload, Join}
+import ai.chronon.spark.{GroupBy, GroupByUpload, Join, ModelTransformsJob}
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -56,7 +56,7 @@ class BatchNodeRunnerArgs(args: Array[String]) extends ScallopConf(args) {
   verify()
 }
 
-class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
+class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends NodeRunner {
   @transient private lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
   def checkPartitions(conf: ExternalSourceSensorNode, range: PartitionRange): Try[Unit] = {
@@ -349,6 +349,25 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
             throw exception
         }
 
+      case NodeContent._Fields.MODEL_TRANSFORMS_BACKFILL =>
+        logger.info(
+          s"Running model transforms backfill for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        require(conf.getModelTransformsBackfill.isSetModelTransforms,
+                "ModelTransformsBackfillNode must have modelTransforms set")
+        val modelTransforms = conf.getModelTransformsBackfill.modelTransforms
+
+        val modelPlatformProvider = Option(api.generateModelPlatformProvider)
+          .getOrElse(
+            throw new IllegalStateException("Api with ModelPlatformProvider must be set for ModelTransforms backfill"))
+
+        ModelTransformsJob.computeBackfill(
+          modelTransforms,
+          range,
+          tableUtils,
+          modelPlatformProvider
+        )
+        logger.info(s"Successfully completed model transforms backfill for '${metadata.name}'")
+
       case _ =>
         throw new UnsupportedOperationException(s"Unsupported NodeContent type: ${conf.getSetField}")
     }
@@ -358,8 +377,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
                              range: PartitionRange,
                              tablePartitionsDataset: String,
                              kvStore: KVStore,
-                             tableStatsDataset: Option[String],
-                             api: Api): Unit = {
+                             tableStatsDataset: Option[String]): Unit = {
     val outputTablePartitionSpec = (for {
       meta <- Option(metadata)
       executionInfo <- Option(meta.executionInfo)
@@ -406,7 +424,6 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
   }
 
   def runFromArgs(
-      api: Api,
       startDs: String,
       endDs: String,
       tablePartitionsDataset: String,
@@ -475,8 +492,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
                          range = range,
                          tablePartitionsDataset = tablePartitionsDataset,
                          kvStore = kvStore,
-                         tableStatsDataset = tableStatsDataset,
-                         api = api)
+                         tableStatsDataset = tableStatsDataset)
         } catch {
           case e: Exception =>
             // Don't fail the job if post-job actions fail
@@ -502,11 +518,10 @@ object BatchNodeRunner {
     val batchArgs = new BatchNodeRunnerArgs(args)
     val node = ThriftJsonCodec.fromJsonFile[Node](batchArgs.confPath(), check = false)
     val tableUtils = TableUtils(SparkSessionBuilder.build(s"batch-node-runner-${node.metaData.name}"))
-    val runner = new BatchNodeRunner(node, tableUtils)
     val api = instantiateApi(batchArgs.onlineClass(), batchArgs.apiProps)
+    val runner = new BatchNodeRunner(node, tableUtils, api)
     val exitCode =
-      runner.runFromArgs(api,
-                         batchArgs.startDs(),
+      runner.runFromArgs(batchArgs.startDs(),
                          batchArgs.endDs(),
                          batchArgs.tablePartitionsDataset(),
                          batchArgs.tableStatsDataset.toOption)

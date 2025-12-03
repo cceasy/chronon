@@ -246,9 +246,9 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
 
     val configPath = createTestConfigFile(twoDaysAgo, yesterday)
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
-    val runner = new BatchNodeRunner(node, tableUtils)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
 
-    val exitCode = runner.runFromArgs(mockApi, twoDaysAgo, yesterday, NodeRunner.DefaultTablePartitionsDataset, None)
+    val exitCode = runner.runFromArgs(twoDaysAgo, yesterday, NodeRunner.DefaultTablePartitionsDataset, None)
 
     assertEquals("runFromArgs should return 0 on success", 0, exitCode)
 
@@ -272,9 +272,9 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
 
     val configPath = createTestConfigFile(twoDaysAgo, today) // today's partition doesn't exist
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
-    val runner = new BatchNodeRunner(node, tableUtils)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
 
-    val exitCode = runner.runFromArgs(mockApi, twoDaysAgo, today, NodeRunner.DefaultTablePartitionsDataset, None)
+    val exitCode = runner.runFromArgs(twoDaysAgo, today, NodeRunner.DefaultTablePartitionsDataset, None)
 
     assertEquals("runFromArgs should return 1 on failure", 1, exitCode)
 
@@ -301,9 +301,9 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
 
     val configPath = createTestConfigFile(twoDaysAgo, yesterday)
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
-    val runner = new BatchNodeRunner(node, tableUtils)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
 
-    val exitCode = runner.runFromArgs(mockApi, twoDaysAgo, yesterday, NodeRunner.DefaultTablePartitionsDataset, None)
+    val exitCode = runner.runFromArgs(twoDaysAgo, yesterday, NodeRunner.DefaultTablePartitionsDataset, None)
 
     assertEquals("runFromArgs should return 0 on success", 0, exitCode)
 
@@ -327,9 +327,9 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
 
     val configPath = createTestConfigFile(futureDate1, futureDate2)
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
-    val runner = new BatchNodeRunner(node, tableUtils)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
 
-    val exitCode = runner.runFromArgs(mockApi, futureDate1, futureDate2, NodeRunner.DefaultTablePartitionsDataset, None)
+    val exitCode = runner.runFromArgs(futureDate1, futureDate2, NodeRunner.DefaultTablePartitionsDataset, None)
 
     assertEquals("runFromArgs should return 1 on failure due to missing all partitions", 1, exitCode)
   }
@@ -357,9 +357,9 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     val threeDaysAgo = tableUtils.partitionSpec.before(twoDaysAgo)
     val configPath = createTestConfigFile(threeDaysAgo, today)
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
-    val runner = new BatchNodeRunner(node, tableUtils)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
 
-    val exitCode = runner.runFromArgs(mockApi, threeDaysAgo, today, NodeRunner.DefaultTablePartitionsDataset, None)
+    val exitCode = runner.runFromArgs(threeDaysAgo, today, NodeRunner.DefaultTablePartitionsDataset, None)
 
     assertEquals("runFromArgs should return 1 on failure due to missing partitions", 1, exitCode)
   }
@@ -395,9 +395,9 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
       partitionFormat = "yyyyMMdd"
     )
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
-    val runner = new BatchNodeRunner(node, tableUtils)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
 
-    val exitCode = runner.runFromArgs(mockApi, twoDaysAgo, yesterday, NodeRunner.DefaultTablePartitionsDataset, None)
+    val exitCode = runner.runFromArgs(twoDaysAgo, yesterday, NodeRunner.DefaultTablePartitionsDataset, None)
 
     assertEquals("runFromArgs should return 0 on success", 0, exitCode)
 
@@ -435,7 +435,7 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     val range = PartitionRange(twoDaysAgo, yesterday)(tableUtils.partitionSpec)
     val configPath = createTestConfigFile(twoDaysAgo, yesterday)
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
-    val runner = new BatchNodeRunner(node, tableUtils)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
 
     val result = runner.checkPartitions(sensorNode, range)
 
@@ -460,7 +460,7 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     val range = PartitionRange(today, today)(tableUtils.partitionSpec) // today's partition doesn't exist
     val configPath = createTestConfigFile(today, today, "test_db.external_table")
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
-    val runner = new BatchNodeRunner(node, tableUtils)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
 
     val result = runner.checkPartitions(sensorNode, range)
 
@@ -487,7 +487,7 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     val range = PartitionRange(today, today)(tableUtils.partitionSpec) // today's partition doesn't exist
     val configPath = createTestConfigFile(today, today, "test_db.external_table")
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
-    val runner = new BatchNodeRunner(node, tableUtils)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
 
     val result = runner.checkPartitions(sensorNode, range)
 
@@ -513,7 +513,7 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     val range = PartitionRange(today, today)(tableUtils.partitionSpec) // today's partition doesn't exist
     val configPath = createTestConfigFile(today, today, "test_db.external_table")
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
-    val runner = new BatchNodeRunner(node, tableUtils)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
 
     val startTime = System.currentTimeMillis()
     val result = runner.checkPartitions(sensorNode, range)
@@ -542,7 +542,7 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     val range = PartitionRange(yesterday, yesterday)(tableUtils.partitionSpec)
     val configPath = createTestConfigFile(yesterday, yesterday, "test_db.nonexistent_table")
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
-    val runner = new BatchNodeRunner(node, tableUtils)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
 
     val result = runner.checkPartitions(sensorNode, range)
 
