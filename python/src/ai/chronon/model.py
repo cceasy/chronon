@@ -162,7 +162,13 @@ def ModelTransforms(
     """
     # Get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
-    
+
+    # Set names for Model objects if they don't have names yet
+    if models:
+        for model in models:
+            if not model.metaData.name:
+                utils.__set_name(model, ttypes.Model, "models")
+
     # Normalize all sources to ensure they are properly wrapped
     normalized_sources = [normalize_source(source) for source in sources]
     

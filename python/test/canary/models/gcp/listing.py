@@ -10,14 +10,20 @@ This model takes some of the listing related fields from the demo join and uses 
 to build up a couple of listing related embeddings
 """
 
-source = JoinSource(join=demo.v1)
+source = JoinSource(
+    join=demo.v1,
+    # filter rows where the headline / long_description is null as Vertex doesn't like empty content strings
+    query=Query(
+        wheres=["(listing_id_headline IS NOT NULL AND listing_id_headline != '') OR (listing_id_long_description IS NOT NULL AND listing_id_long_description != '')"]
+    )
+)
 
 statistics = DataType.STRUCT("statistics", ("truncated", DataType.BOOLEAN), ("token_count", DataType.INT) )
 values = DataType.LIST(DataType.DOUBLE)
 embeddings = DataType.STRUCT("embeddings", ("statistics", statistics), ("values", values))
 
 item_description_model = Model(
-    version="1.0",
+    version="1",
     inference_spec=InferenceSpec(
         model_backend=ModelBackend.VERTEXAI,
         model_backend_params={
@@ -29,7 +35,7 @@ item_description_model = Model(
         "instance": "named_struct('content', concat_ws('; ', listing_id_headline, listing_id_long_description))",
     },
     output_mapping={
-        "item_embedding": "embeddings.values"
+        "item_embedding": "gcp_listing_item_description_model__1__embeddings.values"
     },
     # captures the schema of the model output as documented in:
     # https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings
@@ -54,7 +60,7 @@ item_img_model = Model(
         "instance": "named_struct('image', named_struct('gcsUri', listing_id_main_image_path), 'text','')",
     },
     output_mapping={
-         "image_embedding": "imageEmbedding"
+         "image_embedding": "gcp_listing_item_img_model__001__imageEmbedding"
     },
     # captures the schema of the model output as documented in (differs from the text embedding response):
     # https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-multimodal-embeddings
@@ -70,8 +76,8 @@ v1 = ModelTransforms(
     models=[item_description_model],
     # include a couple of pass through fields from the source / join lookup
     passthrough_fields=["user_id", "listing_id", "listing_id_is_active"],
-    version=1,
-    output_namespace="models",
+    version=2,
+    output_namespace="data",
     key_fields=[
         ("listing_id_headline", DataType.STRING),
         ("listing_id_long_description", DataType.STRING),

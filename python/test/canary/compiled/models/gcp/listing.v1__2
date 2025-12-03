@@ -75,15 +75,15 @@
           "JOB_MODE": "local[*]",
           "PARTITION_COLUMN": "ds",
           "PARTITION_FORMAT": "yyyy-MM-dd",
-          "VERSION": "latest"
+          "VERSION": "0.1.0+dev.piyush"
         }
       }
     },
-    "name": "gcp.listing.v1__1",
-    "outputNamespace": "models",
+    "name": "gcp.listing.v1__2",
+    "outputNamespace": "data",
     "sourceFile": "models/gcp/listing.py",
     "team": "gcp",
-    "version": "1"
+    "version": "2"
   },
   "models": [
     {
@@ -98,11 +98,12 @@
         "instance": "named_struct('content', concat_ws('; ', listing_id_headline, listing_id_long_description))"
       },
       "metaData": {
+        "name": "gcp.listing.item_description_model__1",
         "team": "gcp",
-        "version": "1.0"
+        "version": "1"
       },
       "outputMapping": {
-        "item_embedding": "embeddings.values"
+        "item_embedding": "gcp_listing_item_description_model__1__embeddings.values"
       },
       "valueSchema": {
         "kind": 13,
@@ -648,6 +649,11 @@
             "event_id"
           ],
           "useLongNames": 0
+        },
+        "query": {
+          "wheres": [
+            "(listing_id_headline IS NOT NULL AND listing_id_headline != '') OR (listing_id_long_description IS NOT NULL AND listing_id_long_description != '')"
+          ]
         }
       }
     }
