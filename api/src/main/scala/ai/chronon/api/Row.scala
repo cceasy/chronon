@@ -269,6 +269,21 @@ object Row {
               schemaTraverser.map(_.currentNode)
             )
 
+          case jMap: util.Map[String, Any] =>
+            composer(
+              fields
+                .map { field =>
+                  val value = jMap.get(field.name)
+                  if (value != null) {
+                    edit(value, field.fieldType, getFieldSchema(field))
+                  } else {
+                    null
+                  }
+                },
+              dataType,
+              schemaTraverser.map(_.currentNode)
+            )
+
           case value: Any =>
             assert(extraneousRecord != null, s"No handler for $value of class ${value.getClass}")
             composer(

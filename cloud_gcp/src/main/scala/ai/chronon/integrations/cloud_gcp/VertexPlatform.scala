@@ -1,7 +1,6 @@
 package ai.chronon.integrations.cloud_gcp
 
-import ai.chronon.api.ScalaJavaConversions.MapOps
-import ai.chronon.online.{BatchPredictRequest, ModelPlatform, PredictRequest, PredictResponse}
+import ai.chronon.online.{ModelPlatform, PredictRequest, PredictResponse}
 import com.google.auth.oauth2.GoogleCredentials
 import io.vertx.core.Vertx
 import io.vertx.core.json.{JsonArray, JsonObject}
@@ -14,7 +13,7 @@ import scala.jdk.CollectionConverters._
 class VertexPlatform(project: String,
                      location: String,
                      webClient: Option[WebClient] = None,
-                     credentials: Option[GoogleCredentials] = None)(implicit val ec: ExecutionContext)
+                     credentials: Option[GoogleCredentials] = None)
     extends ModelPlatform {
 
   private lazy val client = webClient.getOrElse {
@@ -177,8 +176,6 @@ class VertexPlatform(project: String,
       predictionJsonObject.getMap.asScala.toMap
     }
   }
-
-  override def batchPredict(batchPredictRequest: BatchPredictRequest): Future[String] = ???
 }
 
 object VertexPlatform {
@@ -189,7 +186,7 @@ object VertexPlatform {
   def main(args: Array[String]): Unit = {
     import scala.concurrent.duration._
 
-    val platform = new VertexPlatform("canary-443022", "us-central1")(ExecutionContext.global)
+    val platform = new VertexPlatform("canary-443022", "us-central1")
     val geminiModel = B.Model(
       metaData = B.MetaData(name = "gemini_model"),
       inferenceSpec = B.InferenceSpec(

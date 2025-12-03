@@ -308,7 +308,6 @@ class GcpApiImpl(conf: Map[String, String]) extends Api(conf) {
               case Some(existingPlatform) =>
                 existingPlatform
               case None =>
-                implicit val ec: ExecutionContext = metrics.FlexibleExecutionContext.buildExecutionContext
                 val newPlatform = new VertexPlatform(projectId, location)
 
                 val existingPlatform = modelPlatformCache.putIfAbsent(cacheKey, newPlatform)

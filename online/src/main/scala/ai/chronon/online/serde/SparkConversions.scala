@@ -17,7 +17,9 @@
 package ai.chronon.online.serde
 
 import ai.chronon.api
+import ai.chronon.online.SparkInternalRowConversions
 import org.apache.spark.sql.Row
+import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.types._
 
@@ -153,5 +155,19 @@ object SparkConversions {
       },
       extraneousRecord
     )
+  }
+
+  // convert a Spark Row to a Map[String, AnyRef] using Catalyst conversions
+  // to map to an InternalRow and then leverage SparkInternalRowConversions
+  def sparkRowToMap(row: Row): Map[String, AnyRef] = {
+    if (row == null) return null
+
+    val internalRow = CatalystTypeConverters
+      .convertToCatalyst(row)
+      .asInstanceOf[InternalRow]
+
+    // now we can use SparkInternalRowConversions to convert to Map
+    val converter = SparkInternalRowConversions.from(row.schema)
+    converter(internalRow).asInstanceOf[Map[String, AnyRef]]
   }
 }

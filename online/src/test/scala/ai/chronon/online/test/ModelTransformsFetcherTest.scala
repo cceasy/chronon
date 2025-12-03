@@ -480,10 +480,6 @@ class TestModelPlatform(responseMap: Map[Map[String, AnyRef], Map[String, AnyRef
     }
     Future.successful(PredictResponse(predictRequest, Success(outputs)))
   }
-  
-  override def batchPredict(request: ai.chronon.online.BatchPredictRequest): Future[String] = {
-    Future.successful("test_batch_job_id")
-  }
 }
 
 class CallTrackingModelPlatform(responseMap: Map[Map[String, AnyRef], Map[String, AnyRef]]) extends ModelPlatform {
@@ -501,10 +497,6 @@ class CallTrackingModelPlatform(responseMap: Map[Map[String, AnyRef], Map[String
       }
     }
     Future.successful(PredictResponse(predictRequest, Success(outputs)))
-  }
-  
-  override def batchPredict(request: ai.chronon.online.BatchPredictRequest): Future[String] = {
-    Future.successful("test_batch_job_id")
   }
 }
 
@@ -529,9 +521,5 @@ class MultiOutputModelPlatform extends ModelPlatform {
     }
     
     Future.successful(PredictResponse(predictRequest, Success(outputs)))
-  }
-  
-  override def batchPredict(request: ai.chronon.online.BatchPredictRequest): Future[String] = {
-    Future.successful("test_batch_job_id")
   }
 }

@@ -300,8 +300,6 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 case class PredictRequest(model: Model, inputRequests: Seq[Map[String, AnyRef]])
 case class PredictResponse(predictRequest: PredictRequest, outputs: Try[Seq[Map[String, AnyRef]]])
 
-case class BatchPredictRequest(source: Source, model: Model, startPartition: String, endPartition: String)
-
 /** Defines the interface that model platforms meant to be used in Chronon ModelSources / Transforms must implement.
   */
 trait ModelPlatform extends Serializable {
@@ -309,15 +307,12 @@ trait ModelPlatform extends Serializable {
   /** Trigger one/more online predictions for a given model.
     * The mapping from the input keys (using Spark expression eval) as well as the output mapping (also using Spark
     * expression eval) is done outside the ModelPlatform implementation.
+    *
+    * Currently, this supports both online batch inference calls and Spark job driven batch inference calls. In the
+    * future we might carve out the bulk batch predictions into a separate `batchPredict` method. The current approach
+    * is chosen to maximize compatibility with prospective model backend platforms that might not support both modes.
     */
   def predict(predictRequest: PredictRequest): Future[PredictResponse]
-
-  /** Trigger a batch prediction job for a given model transforms object and an input Source. The model objects in the transforms
-    * are used to determine how we map the input source columns to the expected model input as well as how we map / transform the
-    * model outputs. The Model InferenceSpec can be used to configure model parameters such as batch size, compute
-    * resources, etc.
-    */
-  def batchPredict(batchPredictRequest: BatchPredictRequest): Future[String]
 }
 
 /** Helps construct and cache ModelPlatform instances based on the model backend type and parameters.
