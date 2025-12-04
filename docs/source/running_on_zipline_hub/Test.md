@@ -16,6 +16,69 @@ This will show you errors if there are any in your definitions, and show you cha
 
 Note, if you are making a change to any existing entities **without** changing the version it will prompt you with a warning.
 
+## Eval
+
+Before running expensive backfill jobs, use eval to quickly validate your configuration. Eval checks that:
+- All source tables exist and are accessible
+- Column names and types match your configuration
+- Query syntax is valid (for StagingQueries)
+- Derivations compile and type-check correctly
+- Dependencies between configurations resolve correctly
+
+### Quick Schema Validation
+
+The most common use case - validate your configuration without running any computations:
+
+```bash
+zipline hub eval --conf compiled/joins/{team}/{your_conf}
+```
+
+This will show you the output schema, lineage, and catch configuration errors early. Example output:
+
+```
+🟢 Eval job finished successfully
+Join Configuration: gcp.demo.user_features__1
+  - Left table: data.user_activity_7d__0
+  - Join parts: 2
+  - Conf dependencies: 3
+  - External tables: 2
+  - Output Schema:
+   [left]    user_id: string
+   [left]    event_timestamp: long
+   [left]    ds: string
+   [joinPart: gcp.user_demographics__0]    user_id_age: integer
+   [derivation]    is_adult: boolean
+
+Lineage:
+[Join] gcp.demo.user_features__1
+├── ✅ [GroupBy] gcp.user_activity_7d__0
+│   └── External: project.events.user_clicks
+└── ✅ [GroupBy] gcp.user_demographics__0
+    └── ✅ [StagingQuery] gcp.raw_demographics__0
+```
+
+![Eval command demonstration](../../images/eval_sample.gif)
+
+### Testing with Sample Data
+
+For deeper validation, provide sample data to see actual computation output:
+
+```bash
+# 1. Generate a test data skeleton
+zipline hub eval --conf compiled/joins/{team}/{your_conf} --generate-skeleton
+
+# 2. Fill in test-data.yaml with sample data (use !epoch for timestamps)
+
+# 3. Run eval with test data
+zipline hub eval --conf compiled/joins/{team}/{your_conf} --test-data-path test-data.yaml
+```
+
+This will show you the actual computed results with your sample data, helping you validate:
+- Complex aggregations and window functions
+- Derivation logic with concrete examples
+- Join key matching behavior
+- Null value handling
+
 ## Backfill
 
 ```sh
