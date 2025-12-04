@@ -95,7 +95,7 @@ class BigTableKVStoreTest extends AnyFlatSpec with BeforeAndAfter {
     emulatorWrapper.after()
   }
 
-  it should "big table creation" in {
+  it should "create BigTable table successfully" in {
     val kvStore = new BigTableKVStoreImpl(dataClient, Some(adminClient))
     val dataset = "test-table"
     kvStore.create(dataset)
@@ -104,7 +104,7 @@ class BigTableKVStoreTest extends AnyFlatSpec with BeforeAndAfter {
     kvStore.create(dataset)
   }
 
-  it should "fail big table creation if missing admin client" in {
+  it should "fail BigTable creation if missing admin client" in {
     val kvStore = new BigTableKVStoreImpl(dataClient, None)
     val dataset = "test-table"
     an[IllegalStateException] should be thrownBy kvStore.create(dataset)
@@ -177,7 +177,7 @@ class BigTableKVStoreTest extends AnyFlatSpec with BeforeAndAfter {
   }
 
   it should "list with pagination" in {
-    val dataset = "models"
+    val dataset = "CHRONON_METADATA"
     val kvStore = new BigTableKVStoreImpl(dataClient, Some(adminClient))
     kvStore.create(dataset)
 
@@ -218,7 +218,7 @@ class BigTableKVStoreTest extends AnyFlatSpec with BeforeAndAfter {
   }
 
   it should "list entity types with pagination" in {
-    val dataset = "metadata"
+    val dataset = "CHRONON_METADATA"
     val kvStore = new BigTableKVStoreImpl(dataClient, Some(adminClient))
     kvStore.create(dataset)
 
@@ -237,7 +237,7 @@ class BigTableKVStoreTest extends AnyFlatSpec with BeforeAndAfter {
     val putResults = Await.result(kvStore.multiPut(putGrpByReqs ++ putJoinReqs), 1.second)
     putResults.foreach(r => r shouldBe true)
 
-    // let's try and read just the joins
+    // let's try and read just the joins - tests that chained filters work correctly
     val limit = 10
     val listReq1 = ListRequest(dataset, Map(ListLimit -> limit, ListEntityType -> JoinFolder))
 
@@ -246,6 +246,13 @@ class BigTableKVStoreTest extends AnyFlatSpec with BeforeAndAfter {
     listResult1.resultProps.contains(ContinuationKey) shouldBe true
     val listValues1 = listResult1.values.get
     listValues1.size shouldBe limit
+
+    // Verify entity type filter works with chained filters
+    listValues1.foreach { value =>
+      val keyStr = new String(value.keyBytes, StandardCharsets.UTF_8)
+      keyStr.contains(JoinFolder) shouldBe true
+      keyStr.contains(GroupByFolder) shouldBe false
+    }
 
     // another call, bigger limit
     val limit2 = 1000
@@ -665,6 +672,138 @@ class BigTableKVStoreTest extends AnyFlatSpec with BeforeAndAfter {
     // we expect results to only cover the time range where we have data
     val expectedTiles = (queryStartsTs until dataEndTs by 1.hour.toMillis).toSeq
     validateTimeSeriesValueExpectedPayload(getResult1.head, expectedTiles, fakePayload)
+  }
+
+  it should "handle multiple entities with different time ranges in single query" in {
+    val dataset = "TILE_SUMMARIES"  // Use non-tiled dataset for simpler test
+    val kvStore = new BigTableKVStoreImpl(dataClient, Some(adminClient))
+    kvStore.create(dataset)
+
+    // Create data for two different entities
+    val entity1Key = "entity1"
+    val entity2Key = "entity2"
+    val fakePayload1 = """{"name": "entity1", "feature": "value1"}"""
+    val fakePayload2 = """{"name": "entity2", "feature": "value2"}"""
+
+    // Generate hourly data from 10/01/24 00:00 to 10/10/24 00:00
+    val tsRange = (1727740800000L until 1728518400000L by 1.hour.toMillis)
+
+    // Write data for both entities
+    writeGeneratedTimeSeriesData(kvStore, dataset, entity1Key.getBytes, tsRange, fakePayload1)
+    writeGeneratedTimeSeriesData(kvStore, dataset, entity2Key.getBytes, tsRange, fakePayload2)
+
+    // Query with different time ranges
+    // Entity 1: 10/02/24 00:00 to 10/04/24 00:00
+    val queryStartTs1 = 1727827200000L
+    val queryEndTs1 = 1728000000000L
+
+    // Entity 2: 10/05/24 00:00 to 10/07/24 00:00
+    val queryStartTs2 = 1728086400000L
+    val queryEndTs2 = 1728259200000L
+
+    val getRequest1 = GetRequest(entity1Key.getBytes, dataset, Some(queryStartTs1), Some(queryEndTs1))
+    val getRequest2 = GetRequest(entity2Key.getBytes, dataset, Some(queryStartTs2), Some(queryEndTs2))
+
+    // Fetch both entities in a single multiGet call
+    val getResults = Await.result(kvStore.multiGet(Seq(getRequest1, getRequest2)), 1.second)
+
+    // Verify we get results for both entities
+    getResults.size shouldBe 2
+
+    // Each should have data for their respective time ranges
+    val expectedTimestamps1 = (queryStartTs1 to queryEndTs1 by 1.hour.toMillis).toSeq
+    val expectedTimestamps2 = (queryStartTs2 to queryEndTs2 by 1.hour.toMillis).toSeq
+
+    validateTimeSeriesValueExpectedPayload(getResults.head, expectedTimestamps1, fakePayload1)
+    validateTimeSeriesValueExpectedPayload(getResults.last, expectedTimestamps2, fakePayload2)
+  }
+
+  it should "handle mixed request types - time series and non-time series" in {
+    val timeSeriesDataset = "TILE_SUMMARIES"
+    val blobDataset = "CHRONON_METADATA"
+    val kvStore = new BigTableKVStoreImpl(dataClient, Some(adminClient))
+    kvStore.create(timeSeriesDataset)
+    kvStore.create(blobDataset)
+
+    // Write time series data
+    val tsKey = "ts_key"
+    val tsPayload = """{"name": "ts_key", "feature": "timeseries"}"""
+    val tsRange = (1728000000000L until 1728172800000L by 1.hour.toMillis)
+    writeGeneratedTimeSeriesData(kvStore, timeSeriesDataset, tsKey.getBytes, tsRange, tsPayload)
+
+    // Write blob data
+    val blobKey = "blob_key"
+    val blobPayload = """{"name": "blob_key", "feature": "blob"}"""
+    val putReq = PutRequest(blobKey.getBytes, blobPayload.getBytes, blobDataset, None)
+    Await.result(kvStore.multiPut(Seq(putReq)), 1.second)
+
+    // Query both types
+    val queryStartTs = 1728043200000L
+    val queryEndTs = 1728129600000L
+
+    val tsGetRequest = GetRequest(tsKey.getBytes, timeSeriesDataset, Some(queryStartTs), Some(queryEndTs))
+    val blobGetRequest = GetRequest(blobKey.getBytes, blobDataset, None, None)
+
+    // Note: These would go to different datasets, so they'd be in separate multiGet calls in practice
+    // Test them separately as they would be in real usage
+    val tsResult = Await.result(kvStore.multiGet(Seq(tsGetRequest)), 1.second)
+    val blobResult = Await.result(kvStore.multiGet(Seq(blobGetRequest)), 1.second)
+
+    tsResult.size shouldBe 1
+    blobResult.size shouldBe 1
+
+    val expectedTimestamps = (queryStartTs to queryEndTs by 1.hour.toMillis).toSeq
+    validateTimeSeriesValueExpectedPayload(tsResult.head, expectedTimestamps, tsPayload)
+    validateBlobValueExpectedPayload(blobResult.head, blobPayload)
+  }
+
+  it should "handle entities where some have data and others don't" in {
+    val dataset = "GROUPBY_STREAMING"
+    val kvStore = new BigTableKVStoreImpl(dataClient, Some(adminClient))
+    kvStore.create(dataset)
+
+    // Create data only for entity1, not for entity2
+    val entity1Key = "entity1_with_data"
+    val entity2Key = "entity2_without_data"
+    val fakePayload1 = """{"name": "entity1", "feature": "value1"}"""
+
+    // Generate hourly data from 10/04/24 00:00 to 10/06/24 00:00
+    val tsRange = (1728000000000L until 1728172800000L by 1.hour.toMillis)
+
+    // Write data only for entity1
+    tsRange.foreach { ts =>
+      val tileKey1 = TilingUtils.buildTileKey(dataset, entity1Key.getBytes, Some(1.hour.toMillis), Some(ts))
+      val tileKeyBytes1 = TilingUtils.serializeTileKey(tileKey1)
+      writeGeneratedTimeSeriesData(kvStore, dataset, tileKeyBytes1, Seq(ts), fakePayload1)
+    }
+    // entity2 has no data written
+
+    // Query both entities with the same time range
+    val queryStartTs = 1728043200000L
+    val queryEndTs = 1728129600000L
+
+    val readTileKey1 = TilingUtils.buildTileKey(dataset, entity1Key.getBytes, Some(1.hour.toMillis), None)
+    val readKeyBytes1 = TilingUtils.serializeTileKey(readTileKey1)
+
+    val readTileKey2 = TilingUtils.buildTileKey(dataset, entity2Key.getBytes, Some(1.hour.toMillis), None)
+    val readKeyBytes2 = TilingUtils.serializeTileKey(readTileKey2)
+
+    val getRequest1 = GetRequest(readKeyBytes1, dataset, Some(queryStartTs), Some(queryEndTs))
+    val getRequest2 = GetRequest(readKeyBytes2, dataset, Some(queryStartTs), Some(queryEndTs))
+
+    // Fetch both entities in a single multiGet call
+    val getResults = Await.result(kvStore.multiGet(Seq(getRequest1, getRequest2)), 1.second)
+
+    // Verify we get results for both requests (even if one is empty)
+    getResults.size shouldBe 2
+
+    // Entity1 should have data
+    val expectedTimestamps = (queryStartTs to queryEndTs by 1.hour.toMillis).toSeq
+    validateTimeSeriesValueExpectedPayload(getResults.head, expectedTimestamps, fakePayload1)
+
+    // Entity2 should have no data (empty response)
+    getResults.last.values.isSuccess shouldBe true
+    getResults.last.values.get.isEmpty shouldBe true
   }
 
   private def writeGeneratedTimeSeriesData(kvStore: BigTableKVStoreImpl,

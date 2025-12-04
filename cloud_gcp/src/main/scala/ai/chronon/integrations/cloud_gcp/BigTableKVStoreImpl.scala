@@ -108,129 +108,156 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
   override def multiGet(requests: Seq[KVStore.GetRequest]): Future[Seq[KVStore.GetResponse]] = {
     logger.debug(s"Performing multi-get for ${requests.size} requests")
 
-    // Group requests by dataset to minimize the number of BigTable calls
-    val requestsByDataset = requests.groupBy(_.dataset)
+    // Group requests by dataset and time range to avoid filter conflicts
+    // For time-series data, we need separate queries for different time ranges
+    val requestGroups = requests.groupBy { req =>
+      val tableType = getTableType(req.dataset)
+      tableType match {
+        case TileSummaries | StreamingTable =>
+          // Group by dataset and time range for time-series data
+          (req.dataset, req.startTsMillis, req.endTsMillis)
+        case _ =>
+          // Group only by dataset for non-time-series data
+          (req.dataset, None, None)
+      }
+    }
 
-    // For each dataset, make a single query with all relevant row keys
-    val datasetFutures = readRowsMultiGet(requestsByDataset)
-    // Combine results from all datasets
-    Future.sequence(datasetFutures).map(_.flatten)
+    // Process each group separately
+    val groupFutures = requestGroups.map { case ((dataset, startTs, endTs), groupRequests) =>
+      readRowsMultiGet(dataset, groupRequests, startTs, endTs)
+    }.toSeq
+
+    // Combine results from all groups
+    Future.sequence(groupFutures).map(_.flatten)
   }
 
-  private def readRowsMultiGet(
-      requestsByDataset: Map[String, Seq[KVStore.GetRequest]]): Seq[Future[Seq[KVStore.GetResponse]]] = {
-    requestsByDataset.map { case (dataset, datasetRequests) =>
-      val targetId = mapDatasetToTable(dataset)
-      val datasetMetricsContext = tableToContext.getOrElseUpdate(
-        targetId.toString,
-        metricsContext.copy(dataset = targetId.toString)
-      )
+  private def readRowsMultiGet(dataset: String,
+                               requests: Seq[KVStore.GetRequest],
+                               startTsMillis: scala.Option[Long],
+                               endTsMillis: scala.Option[Long]): Future[Seq[KVStore.GetResponse]] = {
+    val targetId = mapDatasetToTable(dataset)
+    val datasetMetricsContext = tableToContext.getOrElseUpdate(
+      targetId.toString,
+      metricsContext.copy(dataset = targetId.toString)
+    )
+    val tableType = getTableType(dataset)
 
-      // Create a single query for all requests in this dataset
-      val query = Query
-        .create(targetId)
+    // Calculate endTime once for use throughout the method
+    val endTime = endTsMillis.getOrElse(System.currentTimeMillis())
+    // Create query for this group (all requests now have the same time range)
+    val query = Query.create(targetId)
+
+    // Build the filter chain based on whether this is time-series data
+    val filterChain = if (startTsMillis.isDefined) {
+      // For time-series data, chain column family, qualifier, and timestamp filters
+      Filters.FILTERS
+        .chain()
         .filter(Filters.FILTERS.family().exactMatch(ColumnFamilyString))
         .filter(Filters.FILTERS.qualifier().exactMatch(ColumnFamilyQualifierString))
+        .filter(
+          Filters.FILTERS
+            .timestamp()
+            .range()
+            .startClosed(startTsMillis.get * 1000)
+            .endClosed(endTime * 1000))
+    } else {
+      // For non-time-series data, chain column family, qualifier, and cellsPerRow limit filters
+      Filters.FILTERS
+        .chain()
+        .filter(Filters.FILTERS.family().exactMatch(ColumnFamilyString))
+        .filter(Filters.FILTERS.qualifier().exactMatch(ColumnFamilyQualifierString))
+        .filter(Filters.FILTERS.limit().cellsPerRow(1))
+    }
 
-      // Track which request corresponds to which row key(s)
-      val requestsWithRowKeys = datasetRequests.map { request =>
-        val tableType = getTableType(dataset)
-        val rowKeys = new mutable.ArrayBuffer[ByteString]()
-        // Apply the appropriate filters based on request type
-        (request.startTsMillis, tableType) match {
-          case (Some(startTs), TileSummaries) =>
-            val endTime = request.endTsMillis.getOrElse(System.currentTimeMillis())
-            // Use existing method to add row keys
-            val (_, addedRowKeys) = setQueryTimeSeriesFilters(query, startTs, endTime, request.keyBytes, dataset)
-            rowKeys ++= addedRowKeys
+    // Apply the chained filter to the query
+    query.filter(filterChain)
 
-          case (Some(startTs), StreamingTable) =>
-            val tileKey = TilingUtils.deserializeTileKey(request.keyBytes)
-            val tileSizeMs = tileKey.tileSizeMillis
-            val baseKeyBytes = tileKey.keyBytes.asScala.map(_.toByte).toSeq
-            val endTime = request.endTsMillis.getOrElse(System.currentTimeMillis())
+    // Generate row keys for all requests
+    val requestsWithRowKeys = requests.map { request =>
+      val rowKeys: Seq[ByteString] = (request.startTsMillis, tableType) match {
+        case (Some(startTs), TileSummaries) =>
+          generateTimeSeriesRowKeys(startTs, endTime, request.keyBytes, dataset, None)
 
-            // Use existing method to add row keys
-            val (_, addedRowKeys) =
-              setQueryTimeSeriesFilters(query, startTs, endTime, baseKeyBytes, dataset, Some(tileSizeMs))
-            rowKeys ++= addedRowKeys
+        case (Some(startTs), StreamingTable) =>
+          val tileKey = TilingUtils.deserializeTileKey(request.keyBytes)
+          val tileSizeMs = tileKey.tileSizeMillis
+          val baseKeyBytes = tileKey.keyBytes.asScala.map(_.toByte).toSeq
+          generateTimeSeriesRowKeys(startTs, endTime, baseKeyBytes, dataset, Some(tileSizeMs))
 
-          case _ =>
-            // For non-timeseries data, just add the single row key
-            val baseRowKey = buildRowKey(request.keyBytes, dataset)
-            query.rowKey(ByteString.copyFrom(baseRowKey))
-            query.filter(Filters.FILTERS.limit().cellsPerRow(1))
-            rowKeys.append(ByteString.copyFrom(baseRowKey))
-        }
-
-        (request, rowKeys)
+        case _ =>
+          // For non-timeseries data, just generate the single row key
+          val baseRowKey = buildRowKey(request.keyBytes, dataset)
+          Seq(ByteString.copyFrom(baseRowKey))
       }
-      val startTs = System.currentTimeMillis()
 
-      // Make a single BigTable call for all rows in this dataset
-      val apiFuture = dataClient.readRowsCallable().all().futureCall(query)
-      val scalaResultFuture = googleFutureToScalaFuture(apiFuture)
+      (request, rowKeys)
+    }
 
-      // Process all results at once
-      scalaResultFuture
-        .map { rows =>
-          datasetMetricsContext.distribution("multiGet.latency", System.currentTimeMillis() - startTs)
-          datasetMetricsContext.increment("multiGet.successes")
+    // Add all row keys to the query
+    val allRowKeys = requestsWithRowKeys.flatMap(_._2)
+    allRowKeys.foreach(query.rowKey)
 
-          // Create a map for quick lookup by row key
-          val rowKeyToRowMap = rows.asScala.map(row => row.getKey() -> row).toMap
+    val startTs = System.currentTimeMillis()
 
-          // Map back to original requests
-          requestsWithRowKeys.map { case (request, rowKeys) =>
-            // Get all cells from all row keys for this request
-            val timedValues = rowKeys.flatMap { rowKey =>
-              rowKeyToRowMap.get(rowKey).toSeq.flatMap { row =>
-                row.getCells(ColumnFamilyString, ColumnFamilyQualifier).asScala.map { cell =>
-                  KVStore.TimedValue(cell.getValue.toByteArray, cell.getTimestamp / 1000)
-                }
+    // Make BigTable call
+    val apiFuture = dataClient.readRowsCallable().all().futureCall(query)
+    val scalaResultFuture = googleFutureToScalaFuture(apiFuture)
+
+    // Process results
+    scalaResultFuture
+      .map { rows =>
+        datasetMetricsContext.distribution("multiGet.latency", System.currentTimeMillis() - startTs)
+        datasetMetricsContext.increment("multiGet.successes")
+
+        // Create a map for quick lookup by row key
+        val rowKeyToRowMap = rows.asScala.map(row => row.getKey() -> row).toMap
+
+        // Map back to original requests
+        requestsWithRowKeys.map { case (request, rowKeys) =>
+          // Get all cells from all row keys for this request
+          val timedValues = rowKeys.flatMap { rowKey =>
+            rowKeyToRowMap.get(rowKey).toSeq.flatMap { row =>
+              row.getCells(ColumnFamilyString, ColumnFamilyQualifier).asScala.map { cell =>
+                KVStore.TimedValue(cell.getValue.toByteArray, cell.getTimestamp / 1000)
               }
-            }.toSeq
+            }
+          }.toSeq
 
-            KVStore.GetResponse(request, Success(timedValues))
-          }
+          KVStore.GetResponse(request, Success(timedValues.toSeq))
         }
-        .recover { case e: Exception =>
-          logger.error("Error getting values", e)
-          datasetMetricsContext.increment("multiGet.bigtable_errors", Map("exception" -> e.getClass.getName))
-          // If the batch fails, return failures for all requests in the batch
-          datasetRequests.map { request =>
-            KVStore.GetResponse(request, Failure(e))
-          }
+      }
+      .recover { case e: Exception =>
+        logger.error("Error getting values", e)
+        datasetMetricsContext.increment("multiGet.bigtable_errors", Map("exception" -> e.getClass.getName))
+        // If the batch fails, return failures for all requests in the batch
+        requests.map { request =>
+          KVStore.GetResponse(request, Failure(e))
         }
-    }.toSeq
+      }
   }
 
-  private def setQueryTimeSeriesFilters(query: Query,
-                                        startTs: Long,
+  // Helper method to generate row keys for time-series data
+  // Note: This does NOT add keys to the query - the caller must do that after collecting all keys
+  private def generateTimeSeriesRowKeys(startTs: Long,
                                         endTs: Long,
                                         keyBytes: Seq[Byte],
                                         dataset: String,
-                                        maybeTileSize: scala.Option[Long] = None): (Query, Iterable[ByteString]) = {
-    // we need to generate a rowkey corresponding to each day from the startTs to now
+                                        maybeTileSize: scala.Option[Long] = None): Seq[ByteString] = {
+    // we need to generate a rowkey corresponding to each day from the startTs to endTs
     val millisPerDay = 1.day.toMillis
 
     val startDay = startTs - (startTs % millisPerDay)
     val endDay = endTs - (endTs % millisPerDay)
     // get the rowKeys
-    val rowKeyByteStrings =
-      (startDay to endDay by millisPerDay).map(dayTs => {
+    (startDay to endDay by millisPerDay)
+      .map(dayTs => {
         val rowKey =
           maybeTileSize
             .map(tileSize => buildTiledRowKey(keyBytes, dataset, dayTs, tileSize))
             .getOrElse(buildRowKey(keyBytes, dataset, Some(dayTs)))
-        val rowKeyByteString = ByteString.copyFrom(rowKey)
-        query.rowKey(rowKeyByteString)
-        rowKeyByteString
+        ByteString.copyFrom(rowKey)
       })
-
-    // Bigtable uses microseconds, and we need to scan from startTs (millis) to endTs (millis)
-    (query.filter(Filters.FILTERS.timestamp().range().startClosed(startTs * 1000).endClosed(endTs * 1000)),
-     rowKeyByteStrings)
+      .toSeq
   }
 
   override def list(request: ListRequest): Future[ListResponse] = {
@@ -250,12 +277,18 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
       targetId.toString,
       metricsContext.copy(dataset = targetId.toString)
     )
-    val query = Query
-      .create(targetId)
+
+    // Build chained filter for list operations
+    val chainedFilter = Filters.FILTERS
+      .chain()
       .filter(Filters.FILTERS.family().exactMatch(ColumnFamilyString))
       .filter(Filters.FILTERS.qualifier().exactMatch(ColumnFamilyQualifierString))
       // we also limit to the latest cell per row as we don't want clients to iterate over all prior edits
       .filter(Filters.FILTERS.limit().cellsPerRow(1))
+
+    val query = Query
+      .create(targetId)
+      .filter(chainedFilter)
       .limit(listLimit)
 
     (maybeStartKey, maybeListEntityType) match {
