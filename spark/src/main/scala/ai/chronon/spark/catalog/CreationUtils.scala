@@ -23,7 +23,7 @@ object CreationUtils {
         .filterNot(field => partitionColumns.contains(field.name)))
 
     val createFragment =
-      s"""CREATE TABLE $tableName (
+      s"""CREATE TABLE IF NOT EXISTS $tableName (
          |    ${noPartitions.toDDL}
          |)
          |${if (tableTypeString.isEmpty) "" else f"USING ${tableTypeString}"}
