@@ -1,6 +1,12 @@
 name: branch_protection
 on:
   push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  merge_group:
 jobs:
   enforce_triggered_workflows:
     runs-on: ubuntu-latest
