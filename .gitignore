@@ -127,3 +127,5 @@ MODULE.bazel*
 
 # mill build output
 out/**
+_chronon_gcp_setup/
+_chronon-knowledge-graph/
