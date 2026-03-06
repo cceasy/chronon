@@ -418,6 +418,7 @@ def GroupBy(
     version: Optional[int] = None,
     derivations: List[ttypes.Derivation] = None,
     accuracy: ttypes.Accuracy = None,
+    resolution: Optional[str] = None,
     output_namespace: str = None,
     table_properties: Dict[str, str] = None,
     tags: Dict[str, str] = None,
@@ -482,6 +483,11 @@ def GroupBy(
         This when set can be integrated to trigger alerts. You will have to integrate this flag into your alerting
         system yourself.
     :type production: bool
+    :param resolution:
+        Resolution for tiling aggregation. Controls the precision of the tail hop in the sawtooth
+        aggregation architecture. Available options: "FiveMinuteResolution" (default),
+        "OneMinuteResolution", "DailyResolution". If not specified, defaults to FiveMinuteResolution.
+    :type resolution: Optional[str]
     :param env:
         This is a dictionary of "mode name" to dictionary of "env var name" to "env var value"::
 
@@ -663,6 +669,7 @@ def GroupBy(
         metaData=metadata,
         accuracy=accuracy,
         derivations=derivations,
+        resolution=resolution,
     )
     validate_group_by(group_by)
 

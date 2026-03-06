@@ -1,6 +1,6 @@
 package ai.chronon.spark.join
 
-import ai.chronon.aggregator.windowing.{FiveMinuteResolution, HopsAggregator, Resolution, SawtoothAggregator}
+import ai.chronon.aggregator.windowing.{HopsAggregator, Resolution, ResolutionUtils, SawtoothAggregator}
 import ai.chronon.api
 import ai.chronon.api.ScalaJavaConversions.IterableOps
 import ai.chronon.api.{Constants, TsUtils}
@@ -73,9 +73,9 @@ object AggregationInfo {
   def from(groupBy: api.GroupBy,
            minQueryTs: Long,
            leftSchema: spark.StructType,
-           rightSchema: spark.StructType,
-           resolution: Resolution = FiveMinuteResolution): AggregationInfo = {
+           rightSchema: spark.StructType): AggregationInfo = {
 
+    val resolution = ResolutionUtils.getResolutionByName(groupBy.resolution)
     val specs = groupBy.aggregations.toScala.toArray
     val schema = SparkConversions.toChrononSchema(rightSchema)
 

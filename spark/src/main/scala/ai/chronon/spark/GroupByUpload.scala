@@ -231,7 +231,7 @@ class GroupByUpload(endPartition: String, groupBy: ai.chronon.spark.GroupBy) ext
   }
 
   def temporalEvents(jsonPercent: Int = 1,
-                     resolution: Resolution = FiveMinuteResolution): (DataFrame, Map[String, Long]) = {
+                     resolution: Resolution): (DataFrame, Map[String, Long]) = {
     val endTs = tableUtils.partitionSpec.epochMillis(endPartition)
     logger.info(s"TemporalEvents upload end ts: $endTs")
 
@@ -424,11 +424,12 @@ object GroupByUpload {
                    |Data Model: ${groupByConf.dataModel}
                    |""".stripMargin)
 
+    val resolution = ResolutionUtils.getResolutionByName(groupByConf.resolution)
     val (kvDf, nullCounts) = (groupByConf.inferredAccuracy, groupByConf.dataModel) match {
       case (Accuracy.SNAPSHOT, DataModel.EVENTS)   => groupByUpload.snapshotEvents(jsonPercent)
       case (Accuracy.SNAPSHOT, DataModel.ENTITIES) => groupByUpload.snapshotEntities(jsonPercent)
-      case (Accuracy.TEMPORAL, DataModel.EVENTS)   => shiftedGroupByUpload.temporalEvents(jsonPercent)
-      case (Accuracy.TEMPORAL, DataModel.ENTITIES) => otherGroupByUpload.temporalEvents(jsonPercent)
+      case (Accuracy.TEMPORAL, DataModel.EVENTS)   => shiftedGroupByUpload.temporalEvents(jsonPercent, resolution)
+      case (Accuracy.TEMPORAL, DataModel.ENTITIES) => otherGroupByUpload.temporalEvents(jsonPercent, resolution)
     }
 
     // Emit null count metrics

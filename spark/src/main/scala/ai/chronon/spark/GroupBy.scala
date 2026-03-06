@@ -197,7 +197,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     *   Mutations[MutationDf]: Grouped by key and dsOf[MutationTs] providing an array of updates/deletes to be done
     * With this process the components (end of day batchIr + day's mutations + day's queries -> output)
     */
-  def temporalEntities(queriesUnfilteredDf: DataFrame, resolution: Resolution = FiveMinuteResolution): DataFrame =
+  def temporalEntities(queriesUnfilteredDf: DataFrame, resolution: Resolution): DataFrame =
     tableUtils.withJobDescription(s"temporalEntities(${keyColumns.mkString(",")})") {
 
       // Add extra column to the queries and generate the key hash.
@@ -346,7 +346,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   // we expect queries to contain the partition column
   def temporalEvents(queriesUnfilteredDf: DataFrame,
                      queryTimeRange: Option[TimeRange] = None,
-                     resolution: Resolution = FiveMinuteResolution): DataFrame =
+                     resolution: Resolution): DataFrame =
     tableUtils.withJobDescription(s"temporalEvents(${keyColumns.mkString(",")})") {
 
       val queriesDf = skewFilter

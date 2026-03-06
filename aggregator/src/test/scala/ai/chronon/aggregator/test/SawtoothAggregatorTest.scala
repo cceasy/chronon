@@ -63,12 +63,12 @@ class SawtoothAggregatorTest extends AnyFlatSpec {
     timer.publish("setup")
 
     val sawtoothAggregator =
-      new SawtoothAggregator(aggregations, schema, FiveMinuteResolution)
+      new SawtoothAggregator(aggregations, schema, ResolutionUtils.DefaultResolution)
     val hopsAggregator = new HopsAggregator(
       queries.min,
       aggregations,
       schema,
-      FiveMinuteResolution
+      ResolutionUtils.DefaultResolution
     )
     var hops1 = hopsAggregator.init()
     var hops2 = hopsAggregator.init()
@@ -100,7 +100,7 @@ class SawtoothAggregatorTest extends AnyFlatSpec {
     timer.publish("sawtooth/ComputeWindows")
 
     val windows = aggregations.flatMap(_.unpack.map(_.window)).toArray
-    val tailHops = windows.map(FiveMinuteResolution.calculateTailHop)
+    val tailHops = windows.map(ResolutionUtils.DefaultResolution.calculateTailHop)
     val naiveAggregator = new NaiveAggregator(
       sawtoothAggregator.windowedAggregator,
       windows,
@@ -153,7 +153,7 @@ class SawtoothAggregatorTest extends AnyFlatSpec {
     timer.publish("sawtoothAggregate")
 
     val unpacked = aggregations.flatMap(_.unpack.map(_.window)).toArray
-    val tailHops = unpacked.map(FiveMinuteResolution.calculateTailHop)
+    val tailHops = unpacked.map(ResolutionUtils.DefaultResolution.calculateTailHop)
     val rowAgg = new RowAggregator(schema, aggregations.flatMap(_.unpack))
     val naiveAggregator = new NaiveAggregator(
       rowAgg,
@@ -246,7 +246,7 @@ object SawtoothAggregatorTest {
       queries: Array[Long],
       specs: Seq[Aggregation],
       schema: Seq[(String, DataType)],
-      resolution: Resolution = FiveMinuteResolution
+      resolution: Resolution = ResolutionUtils.DefaultResolution
   ): Array[Array[Any]] = {
 
     // STEP-1. build hops

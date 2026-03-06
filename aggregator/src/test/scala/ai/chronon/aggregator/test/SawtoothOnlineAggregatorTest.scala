@@ -17,7 +17,7 @@
 package ai.chronon.aggregator.test
 
 import ai.chronon.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
-import ai.chronon.aggregator.windowing.{FinalBatchIr, FiveMinuteResolution, SawtoothOnlineAggregator}
+import ai.chronon.aggregator.windowing.{FinalBatchIr, ResolutionUtils, SawtoothOnlineAggregator}
 import ai.chronon.api.Extensions.{WindowOps, WindowUtils}
 import ai.chronon.api._
 import com.google.gson.Gson
@@ -126,7 +126,7 @@ class SawtoothOnlineAggregatorTest extends AnyFlatSpec {
     )
 
     val sawtoothIrs = sawtoothAggregate(events, queries, aggregations, schema)
-    val onlineAggregator = new SawtoothOnlineAggregator(batchEndTs, aggregations, schema, FiveMinuteResolution)
+    val onlineAggregator = new SawtoothOnlineAggregator(batchEndTs, aggregations, schema, ResolutionUtils.DefaultResolution)
     val (events1, events2) = events.splitAt(eventCount / 2)
     val batchIr1 = events1.foldLeft(onlineAggregator.init)(onlineAggregator.update)
     val batchIr2 = events2.foldLeft(onlineAggregator.init)(onlineAggregator.update)
@@ -161,7 +161,7 @@ class SawtoothOnlineAggregatorTest extends AnyFlatSpec {
       ("num", LongType),
       ("user", StringType),
       ("ts_col", StringType)
-    ), FiveMinuteResolution)
+    ), ResolutionUtils.DefaultResolution)
 
 
     // subtract numDays from endTs to get the start of the window
@@ -206,7 +206,7 @@ class SawtoothOnlineAggregatorTest extends AnyFlatSpec {
       ("num", LongType),
       ("user", StringType),
       ("ts_col", StringType)
-    ), FiveMinuteResolution)
+    ), ResolutionUtils.DefaultResolution)
 
     // subtract numDays from endTs to get the start of the window
     val windowStartTs = endTs - WindowUtils.Day.millis * numDays
@@ -250,7 +250,7 @@ class SawtoothOnlineAggregatorTest extends AnyFlatSpec {
       ("num", LongType),
       ("user", StringType),
       ("ts_col", StringType)
-    ), FiveMinuteResolution)
+    ), ResolutionUtils.DefaultResolution)
 
 
     // subtract numDays from endTs to get the start of the window
@@ -295,7 +295,7 @@ class SawtoothOnlineAggregatorTest extends AnyFlatSpec {
       ("num", LongType),
       ("user", StringType),
       ("ts_col", StringType)
-    ), FiveMinuteResolution)
+    ), ResolutionUtils.DefaultResolution)
 
 
     // subtract numDays from endTs to get the start of the window

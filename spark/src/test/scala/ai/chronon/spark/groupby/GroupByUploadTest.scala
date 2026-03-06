@@ -21,7 +21,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.api.{Window, _}
 import ai.chronon.online.fetcher.Fetcher
-import ai.chronon.aggregator.windowing.{FiveMinuteResolution, SawtoothOnlineAggregator}
+import ai.chronon.aggregator.windowing.{ResolutionUtils, SawtoothOnlineAggregator}
 import ai.chronon.online.serde.{AvroCodec, AvroConversions, SparkConversions}
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.GroupByUpload
@@ -841,7 +841,7 @@ object GroupByUploadTest {
     // Decode the Avro value bytes to verify aggregation correctness
     val endTs = tableUtils.partitionSpec.epochMillis(tableUtils.partitionSpec.after("2023-08-14"))
     val chrononSchema = SparkConversions.toChrononSchema(eventDf.schema)
-    val sawtoothAggregator = new SawtoothOnlineAggregator(endTs, aggregations, chrononSchema, FiveMinuteResolution)
+    val sawtoothAggregator = new SawtoothOnlineAggregator(endTs, aggregations, chrononSchema, ResolutionUtils.DefaultResolution)
     val valueZSchema = ai.chronon.api.StructType.from("Value", sawtoothAggregator.batchIrSchema)
     val valueSchemaStr = AvroConversions.fromChrononSchema(valueZSchema).toString(true)
     val valueCodec = new AvroCodec(valueSchemaStr)

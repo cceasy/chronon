@@ -17,7 +17,7 @@
 package ai.chronon.spark.groupby
 
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
-import ai.chronon.aggregator.windowing.FiveMinuteResolution
+import ai.chronon.aggregator.windowing.ResolutionUtils
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{GroupBy => ApiGroupBy, _}
 import ai.chronon.online.serde.{RowWrapper, SparkConversions}
@@ -145,7 +145,7 @@ class GroupByTest extends SparkTestBase {
       new GroupBy(aggregations,
                   keys,
                   eventDf.selectExpr("user", "ts", "concat(ts, \" \", listing_view) as listing_view"))
-    val resultDf = groupBy.temporalEvents(queryDf)
+    val resultDf = groupBy.temporalEvents(queryDf, resolution = ResolutionUtils.DefaultResolution)
     val computed = resultDf.select("user", "ts", "listing_view_last30", "listing_view_count")
     computed.show()
 
@@ -212,7 +212,7 @@ class GroupByTest extends SparkTestBase {
 
     val keys = Seq("user").toArray
     val groupBy = new GroupBy(aggregations, keys, eventDf)
-    val resultDf = groupBy.temporalEvents(queryDf)
+    val resultDf = groupBy.temporalEvents(queryDf, resolution = ResolutionUtils.DefaultResolution)
 
     val keyBuilder = FastHashing.generateKeyBuilder(keys, eventDf.schema)
     // naive aggregation for equivalence testing
@@ -234,7 +234,7 @@ class GroupByTest extends SparkTestBase {
       }
 
     val windows = aggregations.flatMap(_.unpack.map(_.window)).toArray
-    val tailHops = windows.map(FiveMinuteResolution.calculateTailHop)
+    val tailHops = windows.map(ResolutionUtils.DefaultResolution.calculateTailHop)
     val naiveAggregator =
       new NaiveAggregator(groupBy.windowAggregator, windows, tailHops)
     val naiveRdd = queriesByKey.leftOuterJoin(eventsByKey).flatMap {

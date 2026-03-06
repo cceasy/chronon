@@ -18,7 +18,7 @@ package ai.chronon.aggregator.test
 
 import ai.chronon.aggregator.base.TopK
 import ai.chronon.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
-import ai.chronon.aggregator.windowing.FiveMinuteResolution
+import ai.chronon.aggregator.windowing.ResolutionUtils
 import ai.chronon.aggregator.windowing.SawtoothAggregator
 import ai.chronon.aggregator.windowing.TwoStackLiteAggregationBuffer
 import ai.chronon.aggregator.windowing.TwoStackLiteAggregator
@@ -86,7 +86,7 @@ class TwoStackLiteAggregatorTest extends AnyFlatSpec {
     timer.publish("setup")
 
     val sawtoothAggregator =
-      new SawtoothAggregator(aggregations, schema, FiveMinuteResolution)
+      new SawtoothAggregator(aggregations, schema, ResolutionUtils.DefaultResolution)
 
 //    val windows = aggregations.flatMap(_.unpack.map(_.window)).toArray
 //    val tailHops = windows.map(FiveMinuteResolution.calculateTailHop)
@@ -98,7 +98,7 @@ class TwoStackLiteAggregatorTest extends AnyFlatSpec {
 //    val naiveIrs = naiveAggregator.aggregate(events, queries).map(sawtoothAggregator.windowedAggregator.finalize)
 //    timer.publish("naive")
     val bankersAggregator =
-      new TwoStackLiteAggregator(StructType("", columns.map(c => StructField(c.name, c.`type`)).toArray), aggregations)
+      new TwoStackLiteAggregator(StructType("", columns.map(c => StructField(c.name, c.`type`)).toArray), aggregations, ResolutionUtils.DefaultResolution)
 
     // will finalize by default
     val bankersIrs = bankersAggregator
