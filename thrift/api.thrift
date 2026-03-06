@@ -377,6 +377,9 @@ struct GroupBy {
     5: optional Accuracy accuracy
     // support for offline only for now
     7: optional list<Derivation> derivations
+    // Resolution for tiling aggregation (e.g., "FiveMinuteResolution", "OneMinuteResolution")
+    // If not specified, defaults to FiveMinuteResolution
+    8: optional string resolution
 }
 
 struct JoinPart {

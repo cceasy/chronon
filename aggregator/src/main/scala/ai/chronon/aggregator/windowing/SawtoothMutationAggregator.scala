@@ -41,7 +41,7 @@ case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputAr
   */
 class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
                                  inputSchema: Seq[(String, DataType)],
-                                 resolution: Resolution = FiveMinuteResolution,
+                                 resolution: Resolution,
                                  val tailBufferMillis: Long = new Window(2, TimeUnit.DAYS).millis)
     extends SawtoothAggregator(aggregations: Seq[Aggregation],
                                inputSchema: Seq[(String, DataType)],

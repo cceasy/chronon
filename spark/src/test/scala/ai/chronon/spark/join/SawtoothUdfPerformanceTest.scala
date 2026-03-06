@@ -2,7 +2,7 @@ package ai.chronon.spark.join
 
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.test.{Column, NaiveAggregator, Timer, TestRow => TRow}
-import ai.chronon.aggregator.windowing.FiveMinuteResolution
+import ai.chronon.aggregator.windowing.ResolutionUtils
 import ai.chronon.api.Extensions.AggregationOps
 import ai.chronon.api._
 import ai.chronon.spark.join.{AggregationInfo, CGenericRow, SawtoothUdf, UnionJoin}
@@ -99,8 +99,7 @@ class SawtoothUdfPerformanceTest extends BaseJoinTest with Matchers {
       groupBy = groupBy,
       minQueryTs = minQueryTs,
       leftSchema = types.StructType(leftSchema),
-      rightSchema = types.StructType(rightSchema),
-      resolution = FiveMinuteResolution
+      rightSchema = types.StructType(rightSchema)
     )
 
     // Call the sawtoothAggregate function
@@ -125,7 +124,7 @@ class SawtoothUdfPerformanceTest extends BaseJoinTest with Matchers {
     )
 
     val windows = specs.map(_.window).toArray
-    val tailHops = windows.map(FiveMinuteResolution.calculateTailHop)
+    val tailHops = windows.map(ResolutionUtils.DefaultResolution.calculateTailHop)
     val naiveAggregator = new NaiveAggregator(
       rowAggregator,
       windows,

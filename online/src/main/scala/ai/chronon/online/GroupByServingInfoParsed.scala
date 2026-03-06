@@ -41,9 +41,11 @@ class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo)
   val MutationAvroColumns: Seq[String] = MutationAvroFields.map(_.name)
 
   lazy val aggregator: SawtoothOnlineAggregator = {
+    val resolution = ResolutionUtils.getResolutionByName(groupByServingInfo.groupBy.resolution)
     new SawtoothOnlineAggregator(batchEndTsMillis,
                                  groupByServingInfo.groupBy.aggregations.toScala,
-                                 valueChrononSchema.fields.map(sf => (sf.name, sf.fieldType)))
+                                 valueChrononSchema.fields.map(sf => (sf.name, sf.fieldType)),
+                                 resolution)
   }
 
   // caching groupBy helper to avoid re-computing batchDataSet,streamingDataset & inferred accuracy

@@ -32,7 +32,7 @@ case class TiledIr(ts: Long, ir: Array[Any])
 class SawtoothOnlineAggregator(val batchEndTs: Long,
                                aggregations: Seq[Aggregation],
                                inputSchema: Seq[(String, DataType)],
-                               resolution: Resolution = FiveMinuteResolution,
+                               resolution: Resolution,
                                tailBufferMillis: Long = new Window(2, TimeUnit.DAYS).millis)
     extends SawtoothMutationAggregator(aggregations: Seq[Aggregation],
                                        inputSchema: Seq[(String, DataType)],

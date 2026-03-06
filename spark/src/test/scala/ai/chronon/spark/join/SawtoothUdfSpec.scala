@@ -1,6 +1,5 @@
 package ai.chronon.spark.join
 
-import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api._
 import ai.chronon.spark.join.{AggregationInfo, CGenericRow, SawtoothUdf}
 import org.apache.spark.sql.catalyst.expressions.GenericRow
@@ -79,7 +78,6 @@ class SawtoothUdfSpec extends BaseJoinTest with Matchers {
       minQueryTs = minQueryTs,
       leftSchema = leftSchema,
       rightSchema = rightSchema,
-      resolution = FiveMinuteResolution
     )
 
     // Call the sawtoothAggregate function
@@ -162,7 +160,6 @@ class SawtoothUdfSpec extends BaseJoinTest with Matchers {
       minQueryTs = minQueryTs,
       leftSchema = schema,
       rightSchema = schema,
-      resolution = FiveMinuteResolution
     )
 
     // Test with empty input - should not throw exceptions
@@ -223,7 +220,6 @@ class SawtoothUdfSpec extends BaseJoinTest with Matchers {
       minQueryTs = minQueryTs,
       leftSchema = leftSchema,
       rightSchema = rightSchema,
-      resolution = FiveMinuteResolution
     )
 
     // Call the sawtoothAggregate function
@@ -313,7 +309,6 @@ class SawtoothUdfSpec extends BaseJoinTest with Matchers {
       minQueryTs = minQueryTs,
       leftSchema = leftSchema,
       rightSchema = rightSchema,
-      resolution = FiveMinuteResolution
     )
 
     // Call the sawtoothAggregate function

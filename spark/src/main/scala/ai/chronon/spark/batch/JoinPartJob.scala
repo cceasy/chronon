@@ -1,5 +1,6 @@
 package ai.chronon.spark.batch
 
+import ai.chronon.aggregator.windowing.ResolutionUtils
 import ai.chronon.api.DataModel.{ENTITIES, EVENTS}
 import ai.chronon.api.Extensions.{DateRangeOps, DerivationOps, GroupByOps, JoinPartOps, MetadataOps}
 import ai.chronon.api.PartitionRange.toTimeRange
@@ -236,14 +237,16 @@ class JoinPartJob(node: JoinPartNode,
 
         } else {
           // Use traditional temporalEvents approach
-          genGroupBy(unfilledPartitionRange).temporalEvents(renamedLeftDf, Some(toTimeRange(unfilledPartitionRange)))
+          val resolution = ResolutionUtils.getResolutionByName(joinPart.groupBy.resolution)
+          genGroupBy(unfilledPartitionRange).temporalEvents(renamedLeftDf, Some(toTimeRange(unfilledPartitionRange)), resolution)
         }
 
       case (EVENTS, ENTITIES, Accuracy.SNAPSHOT) => genGroupBy(shiftedPartitionRange).snapshotEntities
 
       case (EVENTS, ENTITIES, Accuracy.TEMPORAL) =>
         // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:59>.
-        genGroupBy(unfilledPartitionRange.shift(-1)).temporalEntities(renamedLeftDf)
+        val resolution = ResolutionUtils.getResolutionByName(joinPart.groupBy.resolution)
+        genGroupBy(unfilledPartitionRange.shift(-1)).temporalEntities(renamedLeftDf, resolution)
     }
 
     val rightDfWithDerivations = if (joinPart.groupBy.hasDerivations) {
