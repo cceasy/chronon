@@ -230,8 +230,7 @@ class GroupByUpload(endPartition: String, groupBy: ai.chronon.spark.GroupBy) ext
     (kvDf, nullCounts)
   }
 
-  def temporalEvents(jsonPercent: Int = 1,
-                     resolution: Resolution): (DataFrame, Map[String, Long]) = {
+  def temporalEvents(jsonPercent: Int = 1, resolution: Resolution): (DataFrame, Map[String, Long]) = {
     val endTs = tableUtils.partitionSpec.epochMillis(endPartition)
     logger.info(s"TemporalEvents upload end ts: $endTs")
 

@@ -24,9 +24,7 @@ import ai.chronon.api._
 
 // This implements the two-stack-lite algorithm
 // To understand the intuition behind the algorithm I highly recommend reading the snippet in the end of this file
-class TwoStackLiteAggregator(inputSchema: StructType,
-                             aggregations: Seq[Aggregation],
-                             resolution: Resolution) {
+class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregation], resolution: Resolution) {
 
   private val allParts = aggregations.flatMap(_.unpack)
   allParts.map(_.outputColumnName)
