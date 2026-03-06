@@ -51,19 +51,17 @@ object FiveMinuteResolution extends Resolution {
     Array(WindowUtils.Day.millis, WindowUtils.Hour.millis, WindowUtils.FiveMinutes)
 }
 
-/**
- * OneMinuteResolution provides 1-minute precision for windows < 3 hours.
- *
- * Trade-offs compared to FiveMinuteResolution:
- * - 5x better precision for windows < 3h (±1 min vs ±5 min)
- * - 5x more storage/tiles for windows < 3h
- * - 5x more streaming writes if GroupBy has windows < 3h
- * - Same behavior as FiveMinuteResolution for windows >= 3h
- *
- * Configuration:
- * - Spark: spark.conf.set("chronon.resolution", "OneMinuteResolution")
- * - Env: CHRONON_RESOLUTION=OneMinuteResolution
- */
+/** OneMinuteResolution provides 1-minute precision for windows < 3 hours.
+  *
+  * Trade-offs compared to FiveMinuteResolution:
+  * - 5x better precision for windows < 3h (±1 min vs ±5 min)
+  * - 5x more storage/tiles for windows < 3h
+  * - 5x more streaming writes if GroupBy has windows < 3h
+  * - Same behavior as FiveMinuteResolution for windows >= 3h
+  *
+  * Set via the `resolution` field in GroupBy config (e.g., resolution="OneMinuteResolution" in Python API).
+  * Resolved at runtime by ResolutionUtils.getResolutionByName(groupBy.resolution).
+  */
 object OneMinuteResolution extends Resolution {
   def calculateTailHop(window: Window): Long =
     window.millis match {
@@ -103,12 +101,11 @@ object ResolutionUtils {
     DailyResolution
   ).map(r => r.name -> r).toMap
 
-  /**
-   * Get a resolution by name. Useful for configuration-driven resolution selection.
-   * @param name The resolution name (e.g., "FiveMinuteResolution", "OneMinuteResolution").
-   *             If null or not found, returns DefaultResolution.
-   * @return The corresponding Resolution, or DefaultResolution if not found
-   */
+  /** Get a resolution by name. Useful for configuration-driven resolution selection.
+    * @param name The resolution name (e.g., "FiveMinuteResolution", "OneMinuteResolution").
+    *             If null or not found, returns DefaultResolution.
+    * @return The corresponding Resolution, or DefaultResolution if not found
+    */
   def getResolutionByName(name: String): Resolution = {
     val r = registry.getOrElse(name, DefaultResolution)
     logger.info(s"Using resolution: ${r.name} for name: $name")

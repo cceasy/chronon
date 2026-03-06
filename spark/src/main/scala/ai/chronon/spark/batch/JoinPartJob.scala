@@ -238,7 +238,9 @@ class JoinPartJob(node: JoinPartNode,
         } else {
           // Use traditional temporalEvents approach
           val resolution = ResolutionUtils.getResolutionByName(joinPart.groupBy.resolution)
-          genGroupBy(unfilledPartitionRange).temporalEvents(renamedLeftDf, Some(toTimeRange(unfilledPartitionRange)), resolution)
+          genGroupBy(unfilledPartitionRange).temporalEvents(renamedLeftDf,
+                                                            Some(toTimeRange(unfilledPartitionRange)),
+                                                            resolution)
         }
 
       case (EVENTS, ENTITIES, Accuracy.SNAPSHOT) => genGroupBy(shiftedPartitionRange).snapshotEntities
