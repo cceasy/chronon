@@ -51,13 +51,13 @@ object FiveMinuteResolution extends Resolution {
     Array(WindowUtils.Day.millis, WindowUtils.Hour.millis, WindowUtils.FiveMinutes)
 }
 
-/** OneMinuteResolution provides 1-minute precision for windows < 3 hours.
+/** OneMinuteResolution provides 1-minute precision for windows < 2 hours.
   *
   * Trade-offs compared to FiveMinuteResolution:
-  * - 5x better precision for windows < 3h (±1 min vs ±5 min)
-  * - 5x more storage/tiles for windows < 3h
-  * - 5x more streaming writes if GroupBy has windows < 3h
-  * - Same behavior as FiveMinuteResolution for windows >= 3h
+  * - 5x better precision for windows < 2h (±1 min vs ±5 min)
+  * - 5x more storage/tiles for windows < 2h
+  * - 5x more streaming writes if GroupBy has windows < 2h
+  * - Same behavior as FiveMinuteResolution for windows >= 2h
   *
   * Set via the `resolution` field in GroupBy config (e.g., resolution="OneMinuteResolution" in Python API).
   * Resolved at runtime by ResolutionUtils.getResolutionByName(groupBy.resolution).
@@ -67,7 +67,7 @@ object OneMinuteResolution extends Resolution {
     window.millis match {
       case x if x >= new Window(12, TimeUnit.DAYS).millis  => WindowUtils.Day.millis
       case x if x >= new Window(12, TimeUnit.HOURS).millis => WindowUtils.Hour.millis
-      case x if x >= new Window(3, TimeUnit.HOURS).millis  => WindowUtils.FiveMinutes
+      case x if x >= new Window(2, TimeUnit.HOURS).millis  => WindowUtils.FiveMinutes
       case _                                               => WindowUtils.Minute
     }
 

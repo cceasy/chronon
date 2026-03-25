@@ -42,12 +42,12 @@ class ResolutionTest extends AnyFlatSpec {
   }
 
   "OneMinuteResolution" should "calculate correct tail hops" in {
-    // Windows < 3h use 1min hop
+    // Windows < 2h use 1min hop
     assertEquals(WindowUtils.Minute, OneMinuteResolution.calculateTailHop(new Window(30, TimeUnit.MINUTES)))
     assertEquals(WindowUtils.Minute, OneMinuteResolution.calculateTailHop(new Window(1, TimeUnit.HOURS)))
-    assertEquals(WindowUtils.Minute, OneMinuteResolution.calculateTailHop(new Window(2, TimeUnit.HOURS)))
 
-    // Windows >= 3h and < 12h use 5min hop
+    // Windows >= 2h and < 12h use 5min hop
+    assertEquals(WindowUtils.FiveMinutes, OneMinuteResolution.calculateTailHop(new Window(2, TimeUnit.HOURS)))
     assertEquals(WindowUtils.FiveMinutes, OneMinuteResolution.calculateTailHop(new Window(3, TimeUnit.HOURS)))
     assertEquals(WindowUtils.FiveMinutes, OneMinuteResolution.calculateTailHop(new Window(6, TimeUnit.HOURS)))
     assertEquals(WindowUtils.FiveMinutes, OneMinuteResolution.calculateTailHop(new Window(11, TimeUnit.HOURS)))
@@ -113,9 +113,10 @@ class ResolutionTest extends AnyFlatSpec {
     assertEquals(4, res.hopSizes.length)
   }
 
-  "OneMinuteResolution" should "align with FiveMinuteResolution for windows >= 3h" in {
-    // For all windows >= 3h, OneMinuteResolution should give same result as FiveMinuteResolution
+  "OneMinuteResolution" should "align with FiveMinuteResolution for windows >= 2h" in {
+    // For all windows >= 2h, OneMinuteResolution should give same result as FiveMinuteResolution
     val testWindows = Seq(
+      new Window(2, TimeUnit.HOURS),
       new Window(3, TimeUnit.HOURS),
       new Window(6, TimeUnit.HOURS),
       new Window(12, TimeUnit.HOURS),
