@@ -106,6 +106,11 @@ When updating dependencies, ensure version compatibility:
 - For GCP: check workload identity setup
 - For AWS: verify IRSA (IAM Roles for Service Accounts)
 
+### Snowflake JDBC logs written to $HOME
+The Snowflake JDBC driver writes logs to `$HOME/snowflake_jdbc.log` by default. The `spark` user in these images does not have a writable home directory, which causes noisy warnings or failures.
+
+A Snowflake client config file is written to `/etc/sf_client_config.json` in the image and `SF_CLIENT_CONFIG_FILE` is set to point to it, redirecting logs to `/tmp`.
+
 ### Out of Memory Errors
 - Adjust Spark driver/executor memory settings in your Spark configuration
 - Consider the overhead of cloud connector libraries when sizing pods

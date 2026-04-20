@@ -14,10 +14,7 @@
 
 from gen_thrift.api.ttypes import EntitySource, Source
 
-from ai.chronon.group_by import (
-    GroupBy,
-)
-from ai.chronon.query import Query, selects
+from ai.chronon.types import GroupBy, Query, selects
 
 """
 The primary key for this GroupBy is the same as the primary key of the source table. Therefore,

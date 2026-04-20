@@ -1,9 +1,7 @@
-from gen_thrift.api.ttypes import Team
-
 from ai.chronon.repo.cluster import generate_dataproc_cluster_config, generate_emr_cluster_config
 from ai.chronon.repo.constants import RunMode
 from ai.chronon.repo.spark_catalog_confs import *
-from ai.chronon.types import ClusterConfigProperties, ConfigProperties, EnvironmentVariables
+from ai.chronon.types import ClusterConfigProperties, ConfigProperties, EnvironmentVariables, Team
 
 default = Team(
     description="Default team",
@@ -93,7 +91,7 @@ gcp = Team(
         modeClusterConfigs={
             RunMode.UPLOAD: {
                 "dataproc.config": generate_dataproc_cluster_config(2, "canary-443022", "gs://zipline-artifacts-canary",
-                                                                    idle_timeout="300s",
+                                                                    idle_timeout="7200s",
                                                                     worker_host_type="n2-highmem-4",
                                                                     master_host_type="n2-highmem-8")
             }
@@ -156,7 +154,7 @@ aws = Team(
                 subnet_name="zipline-canary-subnet-main",
                 security_group_name="zipline-canary-sg",
                 instance_type="m5.xlarge",
-                idle_timeout=300,
+                idle_timeout=7200,
                 release_label="emr-7.12.0"
             )
         }
@@ -242,15 +240,17 @@ azure = Team(
             "FRONTEND_URL": "https://dev-azure.zipline.ai",
             "HUB_URL": "https://dev-orch-azure.zipline.ai",
             "SNOWFLAKE_JDBC_URL": "jdbc:snowflake://VEJLULX-AZURE.snowflakecomputing.com/?user=demo_batch_service&db=Demo&schema=public&warehouse=demo_wh",
-            "SNOWFLAKE_VAULT_URI": "https://demo-service-writer-pkey.vault.azure.net/secrets/snowflake-private-key",
+            "SNOWFLAKE_PRIVATE_KEY_VAULT_URI": "https://demo-service-writer-pkey.vault.azure.net/secrets/snowflake-private-key",
+            "OC_CREDENTIAL_VAULT_URI": "https://dev-zipline-secrets.vault.azure.net/secrets/oc-catalog-credential",
             "EVAL_URL": "https://dev-azure.zipline.ai/services/eval",
+            "AUTH_SCOPE": "api://dev-zipline-auth"
         },
     ),
     conf=ConfigProperties(
         common={
             **OpenCatalogConfiguration({
                 "spark.sql.catalog.spark_catalog.uri": "https://vejlulx-azure-oc.snowflakecomputing.com/polaris/api/catalog",
-                "spark.sql.catalog.spark_catalog.credential": "XtyCirtE0/o3pcTMdkLCh7LXVno=:i++cOG/+vHgZwU8Wnj5Qx3hIzHwvlr0rhaGJnDwIBTg=",
+                "spark.sql.catalog.spark_catalog.credential": "{OC_CREDENTIAL}",
                 "spark.sql.catalog.spark_catalog.warehouse": "demo-v2",
                 "spark.sql.catalog.spark_catalog.scope": "PRINCIPAL_ROLE:engine",
 
@@ -334,7 +334,7 @@ aws_databricks = Team(
                 subnet_name="zipline-canary-subnet-main",
                 security_group_name="zipline-canary-sg",
                 instance_type="m5.xlarge",
-                idle_timeout=300,
+                idle_timeout=7200,
                 release_label="emr-7.12.0"
             )
         }

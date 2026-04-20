@@ -1,0 +1,38 @@
+name: Build and Push Flink Docker Image
+
+on:
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: ziplineai/flink
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read Flink version from Dockerfile
+        id: flink_version
+        run: echo "version=$(grep -m1 '^ARG FLINK_VERSION=' docker/flink/Dockerfile | cut -d= -f2)" >> $GITHUB_OUTPUT
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/flink
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.flink_version.outputs.version }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -217,6 +217,23 @@ def test_select_sanitization():
     )
 
 
+def test_tuple_sources_are_normalized():
+    gb = group_by.GroupBy(
+        sources=(event_source("event_table1"), event_source("event_table2")),
+        keys=["subject"],
+        aggregations=group_by.Aggregations(
+            event_id=ttypes.Aggregation(operation=ttypes.Operation.LAST),
+            cnt=ttypes.Aggregation(operation=ttypes.Operation.COUNT),
+        ),
+        version=0,
+    )
+
+    assert [source.events.table for source in gb.sources] == [
+        "event_table1",
+        "event_table2",
+    ]
+
+
 def test_snapshot_with_hour_aggregation():
     with pytest.raises(AssertionError):
         group_by.GroupBy(
@@ -424,3 +441,35 @@ def test_online_schedule_validation():
         online_schedule="0 2 * * *"  # Custom schedule
     )
     assert gb.metaData.executionInfo.onlineSchedule == "0 2 * * *"
+
+    # Test that @never disables online scheduling even when online=True
+    gb = group_by.GroupBy(
+        sources=event_source("table"),
+        keys=["subject"],
+        aggregations=group_by.Aggregations(
+            count=group_by.Aggregation(
+                input_column="event_id",
+                operation=group_by.Operation.COUNT
+            ),
+        ),
+        version=1,
+        online=True,
+        online_schedule="@never"
+    )
+    assert gb.metaData.executionInfo.onlineSchedule is None
+
+    # Test that @never is accepted even when online=False
+    gb = group_by.GroupBy(
+        sources=event_source("table"),
+        keys=["subject"],
+        aggregations=group_by.Aggregations(
+            count=group_by.Aggregation(
+                input_column="event_id",
+                operation=group_by.Operation.COUNT
+            ),
+        ),
+        version=1,
+        online=False,
+        online_schedule="@never"
+    )
+    assert gb.metaData.executionInfo.onlineSchedule is None

@@ -406,13 +406,11 @@ class Analyzer(tableUtils: TableUtils,
             val tableToPartitions = groupBy.sources.toScala.map { source =>
               val table = source.table
               logger.info(s"Checking table $table for data availability ...")
-              val partitions = tableUtils.partitions(table)
-              val startOpt = if (partitions.isEmpty) None else Some(partitions.min)
-              val endOpt = if (partitions.isEmpty) None else Some(partitions.max)
-              (table, partitions, startOpt, endOpt)
+              val startOpt = tableUtils.firstAvailablePartition(table)
+              val endOpt = tableUtils.lastAvailablePartition(table)
+              (table, startOpt, endOpt)
             }
-            val allPartitions = tableToPartitions.flatMap(_._2)
-            val minPartition = if (allPartitions.isEmpty) None else Some(allPartitions.min)
+            val minPartition = tableToPartitions.flatMap(_._2).sorted.headOption
 
             if (minPartition.isEmpty || minPartition.get > expectedStart) {
               logger.info(s"""
@@ -421,7 +419,7 @@ class Analyzer(tableUtils: TableUtils,
                          |right-${groupBy.dataModel.toString.low.yellow},
                          |accuracy-${groupBy.inferredAccuracy.toString.low.yellow}
                          |expected earliest available data partition: $expectedStart\n""".stripMargin.red)
-              tableToPartitions.foreach { case (table, _, startOpt, endOpt) =>
+              tableToPartitions.foreach { case (table, startOpt, endOpt) =>
                 logger.info(
                   s"Table $table startPartition ${startOpt.getOrElse("empty")} endPartition ${endOpt.getOrElse("empty")}")
               }

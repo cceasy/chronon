@@ -22,7 +22,7 @@ Scenario:
 - Here, `x`, `x_mean` and `x_std` are all **raw features** already defined in the join. Raw features can be feature columns from any `join_parts` or `external_parts`
 
 ```python
-from ai.chronon.join import Join, Derivation
+from ai.chronon.types import Derivation, Join
 
 Join(
     ...,
@@ -58,16 +58,17 @@ File `group_bys/sample/card_features.py`
 
 ```python
 
-from ai.chronon.group_by import (
+from ai.chronon.types import (
    Accuracy,
-   GroupBy,
    Aggregation,
+   EventSource,
+   GroupBy,
    Operation,
-   Window,
+   Query,
    TimeUnit,
+   Window,
+   selects as select,
 )
-from ai.chronon.api.ttypes import EventSource
-from ai.chronon.query import Query, select
 
 transactions_source = EventSource(
        table="namespace.transaction_table",  # TODO fill this
@@ -103,8 +104,7 @@ File `joins/sample/txn_fraud.py`
 
 ```python
 from group_bys.sample_team import card_features
-from ai.chronon.api.ttypes import EventSource
-from ai.chronon.join import Join, JoinPart, Derivation
+from ai.chronon.types import Derivation, EventSource, Join, JoinPart
 
 v1 = Join(
     online=True,
@@ -140,16 +140,17 @@ Assume an input stream with the following fields
 File `group_bys/sample/merchant_features.py`
 
 ```python
-from ai.chronon.group_by import (
+from ai.chronon.types import (
    Accuracy,
-   GroupBy,
    Aggregation,
+   EventSource,
+   GroupBy,
    Operation,
-   Window,
+   Query,
    TimeUnit,
+   Window,
+   selects as select,
 )
-from ai.chronon.api.ttypes import EventSource
-from ai.chronon.query import Query, select
 
 
 # TODO Add data tests
@@ -182,8 +183,7 @@ File `joins/sample/txn_fraud.py`
 
 ```python
 from group_bys.sample_team import merchant_features
-from ai.chronon.api.ttypes import EventSource
-from ai.chronon.join import Join, JoinPart, Derivation
+from ai.chronon.types import Derivation, EventSource, Join, JoinPart
 
 v1 = Join(
     online=True,

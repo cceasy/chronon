@@ -128,9 +128,8 @@ class PartitionRunner[T](verb: String,
   }
 
   def partitionRange(table: String): PartitionRange = {
-    val parts = tu.partitions(table)
-    val minPartition = if (parts.isEmpty) null else parts.min
-    val maxPartition = if (parts.isEmpty) null else parts.max
+    val minPartition = tu.firstAvailablePartition(table).orNull
+    val maxPartition = tu.lastAvailablePartition(table).orNull
     PartitionRange(minPartition, maxPartition)(partitionSpec)
   }
 }

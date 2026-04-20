@@ -1,7 +1,7 @@
 
 from sources import sample_sources
 
-from ai.chronon.group_by import Aggregation, Derivation, GroupBy, Operation
+from ai.chronon.types import Aggregation, Derivation, GroupBy, Operation
 
 # V1 does not include base fields
 v1 = GroupBy(
@@ -20,7 +20,7 @@ v1 = GroupBy(
 )
 
 
-# V2 dooes include base fields
+# V2 does include base fields
 v2 = GroupBy(
     sources=sample_sources.event_source,
     keys=["group_by_subject"],

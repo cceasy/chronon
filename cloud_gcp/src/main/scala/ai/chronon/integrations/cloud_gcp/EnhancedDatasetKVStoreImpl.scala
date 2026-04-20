@@ -8,7 +8,6 @@ import com.google.cloud.bigtable.data.v2.BigtableDataClient
 import com.google.cloud.bigtable.data.v2.models.{Filters, Query, RowMutation, TableId => BTTableId}
 import com.google.protobuf.ByteString
 import org.slf4j.{Logger, LoggerFactory}
-import org.threeten.bp.Duration
 
 import java.nio.charset.StandardCharsets
 import java.time.format.DateTimeFormatter
@@ -45,15 +44,12 @@ class EnhancedDatasetKVStoreImpl(dataClient: BigtableDataClient,
 
   import EnhancedDatasetKVStoreImpl._
 
-  // Keep enhanced stats data for 90 days
-  private val DataTTL = Duration.ofDays(90)
-
   // Cap the maximum number of cells per row (allows many hourly data points per day)
   private val MaxCellCount = 2000
 
-  // GC rules for enhanced stats table
+  // GC rules for enhanced stats table — no TTL, stats should persist indefinitely
   private val DefaultGcRules =
-    GCRules.GCRULES.union().rule(GCRules.GCRULES.maxAge(DataTTL)).rule(GCRules.GCRULES.maxVersions(MaxCellCount))
+    GCRules.GCRULES.maxVersions(MaxCellCount)
 
   protected val metricsContext: Metrics.Context =
     Metrics.Context(Metrics.Environment.KVStore).withSuffix("enhanced_stats")

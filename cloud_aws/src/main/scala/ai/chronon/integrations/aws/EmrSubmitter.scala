@@ -8,9 +8,16 @@ import ai.chronon.integrations.aws.EmrSubmitter.{
   DefaultClusterInstanceType
 }
 import ai.chronon.spark.submission.JobSubmitterConstants._
-import ai.chronon.spark.submission.{JobSubmitter, JobType, FlinkJob => TypeFlinkJob, SparkJob => TypeSparkJob}
+import ai.chronon.spark.submission.{
+  JobSubmitter,
+  JobType,
+  StorageClient,
+  FlinkJob => TypeFlinkJob,
+  SparkJob => TypeSparkJob
+}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import ai.chronon.integrations.cloud_k8s.K8sFlinkSubmitter
 import io.fabric8.kubernetes.client.Config
 import software.amazon.awssdk.core.exception.SdkException
 import software.amazon.awssdk.services.ec2.Ec2Client
@@ -19,6 +26,7 @@ import software.amazon.awssdk.services.emr.EmrClient
 import software.amazon.awssdk.services.emr.model.{Unit => _, _}
 import software.amazon.awssdk.services.s3.S3Client
 
+import java.time.Instant
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Success, Try}
@@ -26,9 +34,8 @@ import scala.util.{Failure, Success, Try}
 class EmrSubmitter(customerId: String,
                    emrClient: EmrClient,
                    ec2Client: Ec2Client,
-                   eksFlinkSubmitter: Option[EksFlinkSubmitter] = None,
+                   eksFlinkSubmitter: Option[K8sFlinkSubmitter] = None,
                    s3Client: Option[S3Client] = None,
-                   dynamodbTableName: String = "",
                    awsRegion: String = "",
                    override val tablePartitionsDataset: String = "",
                    override val dqMetricsDataset: String = "",
@@ -36,7 +43,8 @@ class EmrSubmitter(customerId: String,
                    flinkEksNamespace: Option[String] = None,
                    eksClusterName: Option[String] = None,
                    ingressBaseUrl: Option[String] = None,
-                   flinkHealthCheckFn: Option[String] => Boolean = _ => true)
+                   flinkHealthCheckFn: Option[String] => Boolean = _ => true,
+                   flinkInternalJobIdFetchFn: Option[String] => Option[String] = _ => None)
     extends JobSubmitter {
 
   private val ClusterApplications = List(
@@ -509,7 +517,7 @@ class EmrSubmitter(customerId: String,
 
         val deploymentName = eksFlinkSubmitter
           .getOrElse(
-            throw new RuntimeException("EksFlinkSubmitter is required for Flink jobs")
+            throw new RuntimeException("K8sFlinkSubmitter is required for Flink jobs")
           )
           .submit(
             jobId = jobId,
@@ -550,13 +558,22 @@ class EmrSubmitter(customerId: String,
   override def status(jobId: String): JobStatusType = {
     if (jobId.startsWith("flink:")) {
       val parts = jobId.split(":", 3)
-      val eksStatus = eksFlinkSubmitter
-        .getOrElse(throw new RuntimeException("EksFlinkSubmitter is required for Flink jobs"))
-        .status(deploymentName = parts(2), namespace = parts(1))
+      val (eksStatus, creationTime) = eksFlinkSubmitter
+        .getOrElse(throw new RuntimeException("K8sFlinkSubmitter is required for Flink jobs"))
+        .statusWithCreationTime(deploymentName = parts(2), namespace = parts(1))
       eksStatus match {
         case JobStatusType.RUNNING if flinkHealthCheckFn(getFlinkUrl(jobId)) => JobStatusType.RUNNING
-        case JobStatusType.RUNNING                                           => JobStatusType.PENDING
-        case other                                                           => other
+        case JobStatusType.RUNNING                                           =>
+          // Health check failed: job is STABLE on K8s but checkpoints haven't accumulated yet.
+          // Within the grace period this is expected (K8s startup consumes part of the window),
+          // so stay PENDING rather than triggering a retrigger.
+          JobSubmitter.flinkStatusWithGrace(
+            jobId,
+            creationTime,
+            EmrServerlessSubmitter.FlinkHealthCheckGracePeriod,
+            logger
+          )
+        case other => other
       }
     } else {
       val (clusterId, stepId) = if (jobId.contains(":")) {
@@ -601,7 +618,7 @@ class EmrSubmitter(customerId: String,
     if (jobId.startsWith("flink:")) {
       val parts = jobId.split(":", 3)
       eksFlinkSubmitter
-        .getOrElse(throw new RuntimeException("EksFlinkSubmitter is required for Flink jobs"))
+        .getOrElse(throw new RuntimeException("K8sFlinkSubmitter is required for Flink jobs"))
         .delete(deploymentName = parts(2), namespace = parts(1))
     } else {
       val parts = jobId.split(":")
@@ -677,6 +694,24 @@ class EmrSubmitter(customerId: String,
     ingressBaseUrl.map(base => s"${base.stripSuffix("/")}/flink/$deploymentName/")
   }
 
+  override def getFlinkInternalJobId(jobId: String): Option[String] =
+    flinkInternalJobIdFetchFn(getFlinkUrl(jobId))
+
+  override def getLatestCheckpointPath(flinkInternalJobId: String, flinkStateUri: String): Option[String] = {
+    val s3 = s3Client.getOrElse {
+      logger.warn(s"S3 client not available, cannot resolve checkpoint path for Flink job $flinkInternalJobId")
+      return None
+    }
+    val result = StorageClient.resolveLatestCheckpointPath(new S3StorageClient(s3), flinkInternalJobId, flinkStateUri)
+    result match {
+      case Some(path) => logger.info(s"Resolved latest checkpoint for Flink job $flinkInternalJobId: $path")
+      case None =>
+        logger.warn(
+          s"No checkpoints found for Flink job $flinkInternalJobId at $flinkStateUri/checkpoints/$flinkInternalJobId")
+    }
+    result
+  }
+
   override def deprecatedClusterNameEnvVars: Seq[String] = Seq(EmrClusterNameEnvVar)
 
   override def clusterIdentifierKey: String = ClusterId
@@ -721,7 +756,6 @@ class EmrSubmitter(customerId: String,
   }
 
   override def kvStoreApiProperties: Map[String, String] = Map(
-    "AWS_DYNAMODB_TABLE_NAME" -> dynamodbTableName,
     "AWS_DEFAULT_REGION" -> awsRegion
   )
 }
@@ -738,7 +772,7 @@ object EmrSubmitter {
       customerId,
       EmrClient.builder().build(),
       Ec2Client.builder().build(),
-      eksFlinkSubmitter = Some(new EksFlinkSubmitter(k8sConfig, ingressBaseUrl = ingressBaseUrl)),
+      eksFlinkSubmitter = Some(EksFlinkSubmitter(k8sConfig, ingressBaseUrl = ingressBaseUrl)),
       awsRegion = awsRegion,
       flinkEksServiceAccount = sys.env.get("FLINK_EKS_SERVICE_ACCOUNT"),
       flinkEksNamespace = sys.env.get("FLINK_EKS_NAMESPACE"),

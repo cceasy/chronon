@@ -902,7 +902,7 @@
       "user_id_view_event_sum_30d": "c7ae73b92e2a8aabfb4df9d22d37d2f5",
       "user_id_view_event_sum_7d": "c7ae73b92e2a8aabfb4df9d22d37d2f5"
     },
-    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_quickstart_quickstart_exports_user_activities__0_with_offset_0\", \"spec\": \"quickstart.quickstart_exports_user_activities__0/ds={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_quickstart_quickstart_exports_dim_listings__0_with_offset_0\", \"spec\": \"quickstart.quickstart_exports_dim_listings__0/ds={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_quickstart_quickstart_exports_user_activities__0_with_offset_0\", \"spec\": \"quickstart.quickstart_exports_user_activities__0/ds={{ macros.ds_add(ds, 0) }}\"}]}",
+    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_quickstart_quickstart_exports_user_activities__0_with_offset_0\", \"spec\": \"quickstart.quickstart_exports_user_activities__0/ds={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_quickstart_quickstart_exports_dim_listings__0_with_offset_0\", \"spec\": \"quickstart.quickstart_exports_dim_listings__0/ds={{ macros.ds_add(ds, 0) }}\"}]}",
     "executionInfo": {
       "conf": {
         "common": {

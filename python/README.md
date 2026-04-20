@@ -18,7 +18,7 @@ from ai.chronon.query import (
   Query,
   select,
 )
-from ai.chronon.api.ttypes import Source, EventSource, EntitySource
+from ai.chronon.source import EventSource, EntitySource
 
 # Sample query
 Query(
@@ -35,14 +35,14 @@ Query(
   reversal_column="CASE WHEN mutation_type IN ('DELETE', 'UPDATE_BEFORE') THEN true ELSE false END"
 )
 
-user_activity = Source(entities=EntitySource(
-  snapshotTable="db_exports.table",
-  mutationTable="mutations_namespace.table_mutations",
-  mutationTopic="mutationsKafkaTopic",
+user_activity = EntitySource(
+  snapshot_table="db_exports.table",
+  mutation_table="mutations_namespace.table_mutations",
+  mutation_topic="mutationsKafkaTopic",
   query=Query(...)
 )
 
-website__views = Source(events=EventSource(
+website__views = EventSource(
   table="namespace.table",
   topic="kafkaTopicForEvents",
 )

@@ -3,6 +3,7 @@ import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
+import click
 import requests
 
 from ai.chronon.cli.formatter import Format
@@ -20,16 +21,48 @@ class ZiplineHub:
         cloud_provider=None,
         scope=None,
         format: Format = Format.TEXT,
+        auth_url=None,
     ):
         if not base_url:
             raise ValueError("Base URL for ZiplineHub cannot be empty.")
-        self.base_url = base_url
+        self.base_url = base_url.rstrip("/")
         self.eval_url = eval_url
         self.format = format
         self.cloud_provider = (
             cloud_provider.lower() if cloud_provider is not None else cloud_provider
         )
         self.version = utils.get_package_version()
+        self._hub_auth_config = None
+        self._zipline_token = None
+        self._zipline_auth_url = None
+
+        # Auth resolution order:
+        # 0. ZIPLINE_TOKEN env var (session token → JWT exchange, or JWT directly)
+        # 1. CLI auth exact match (auth_url matches a stored account)
+        # 2. Cloud provider auth (GCP/Azure service account, ID_TOKEN)
+        # 3. CLI auth default (fallback to default account for non-cloud setups)
+        zipline_token = os.getenv("ZIPLINE_TOKEN")
+        if zipline_token:
+            self._zipline_token = zipline_token
+            self._zipline_auth_url = os.getenv("ZIPLINE_AUTH_URL") or auth_url
+            self.use_auth = True
+            self.sa = None
+            self.id_token = None
+            print_info("Using ZIPLINE_TOKEN for authentication.", format=format)
+            return
+
+        if use_auth:
+            from ai.chronon.repo.auth import get_auth_config
+
+            config = get_auth_config(url=auth_url)
+            if config and config.get("access_token"):
+                self._hub_auth_config = config
+                self.use_auth = True
+                self.sa = None
+                self.id_token = None
+                print_info("Using authentication for ZiplineHub.", format=format)
+                return
+
         if self.base_url.startswith("https") and use_auth:
             if self.cloud_provider == "gcp":
                 self.use_auth = True
@@ -56,6 +89,21 @@ class ZiplineHub:
                     self.use_auth = True
                     print_info("Using authentication for ZiplineHub.", format=format)
                     self.sa = None
+        elif use_auth:
+            # No cloud auth available — try default CLI auth as fallback
+            # (e.g., local dev where FRONTEND_URL in teams.py differs from the auth URL)
+            from ai.chronon.repo.auth import get_auth_config
+
+            config = get_auth_config()
+            if config and config.get("access_token"):
+                self._hub_auth_config = config
+                self.use_auth = True
+                self.sa = None
+                self.id_token = None
+                print_info("Using authentication for ZiplineHub.", format=format)
+                return
+            self.use_auth = False
+            print_info("Not using authentication for ZiplineHub.", format=format)
         else:
             self.use_auth = False
             print_info("Not using authentication for ZiplineHub.", format=format)
@@ -64,6 +112,7 @@ class ZiplineHub:
     def _setup_gcp_auth(self, sa_name):
         """Setup Google Cloud authentication."""
         import google.auth
+        from google.auth.exceptions import GoogleAuthError
         from google.auth.transport.requests import Request
 
         print_info("Using Google Cloud authentication for ZiplineHub.", format=self.format)
@@ -76,15 +125,21 @@ class ZiplineHub:
         elif sa_name is not None:
             # Fallback to Google Cloud authentication
             print_info("Generating ID token from service account credentials.", format=self.format)
-            credentials, project_id = google.auth.default()
-            self.project_id = project_id
-            credentials.refresh(Request())
+            try:
+                credentials, project_id = google.auth.default()
+                self.project_id = project_id
+                credentials.refresh(Request())
+            except GoogleAuthError as e:
+                raise click.ClickException(str(e)) from e
 
             self.sa = f"{sa_name}@{project_id}.iam.gserviceaccount.com"
         else:
             print_info("Generating ID token from default credentials.", format=self.format)
-            credentials, project_id = google.auth.default()
-            credentials.refresh(Request())
+            try:
+                credentials, project_id = google.auth.default()
+                credentials.refresh(Request())
+            except GoogleAuthError as e:
+                raise click.ClickException(str(e)) from e
             self.sa = None
             self.id_token = credentials.id_token
 
@@ -119,11 +174,46 @@ class ZiplineHub:
             "Content-Type": "application/json",
             "X-Zipline-Version": self.version,
         }
-        if self.use_auth and hasattr(self, "sa") and self.sa is not None:
+        if self._zipline_token:
+            from ai.chronon.repo.token_exchange import resolve_token
+
+            try:
+                jwt_token = resolve_token(self._zipline_token, self._zipline_auth_url)
+            except (RuntimeError, ValueError) as e:
+                raise click.ClickException(str(e)) from None
+            headers["Authorization"] = f"Bearer {jwt_token}"
+        elif self._hub_auth_config:
+            jwt_token = self._get_hub_jwt()
+            if jwt_token:
+                headers["Authorization"] = f"Bearer {jwt_token}"
+        elif self.use_auth and hasattr(self, "sa") and self.sa is not None:
             headers["Authorization"] = f"Bearer {self._sign_jwt(self.sa, url)}"
         elif self.use_auth:
             headers["Authorization"] = f"Bearer {self.id_token}"
         return headers
+
+    def _get_hub_jwt(self):
+        """Fetch a short-lived JWT from Zipline Hub using the stored session token."""
+        config = self._hub_auth_config
+        hub_url = config["url"]
+        session_token = config["access_token"]
+        try:
+            resp = requests.get(
+                f"{hub_url}/api/auth/token",
+                headers={"Authorization": f"Bearer {session_token}"},
+                timeout=10,
+            )
+            if resp.ok:
+                return resp.json().get("token")
+            else:
+                print_warning(
+                    "Session expired. Run 'zipline auth login' to re-authenticate.",
+                    format=self.format,
+                )
+                return None
+        except requests.RequestException as e:
+            print_warning(f"Failed to fetch JWT from hub: {e}", format=self.format)
+            return None
 
     def _get_error_details(self, e: requests.RequestException) -> str:
         """Extract error details from request exception including response JSON if available."""
@@ -138,18 +228,37 @@ class ZiplineHub:
         return " | ".join(error_parts)
 
     def handle_unauth(self, e: requests.RequestException, api_name: str):
-        if e.response is not None and e.response.status_code == 401 and self.sa is None:
-            print_error(
-                f"Error calling {api_name} API. Unauthorized and no service account provided. "
-                "Set up default credentials or provide SA_NAME in teams.py.",
-                format=self.format,
+        if e.response is None or e.response.status_code != 401:
+            return
+        sa = getattr(self, "sa", None)
+        if self._zipline_token:
+            msg = (
+                f"Error calling {api_name} API. Unauthorized with ZIPLINE_TOKEN. "
+                "The token may be expired or revoked. If using a service principal, "
+                "rotate the token in the admin UI. If using a JWT from "
+                "'zipline auth get-access-token', it may have expired (~15 min)."
             )
-        elif e.response is not None and e.response.status_code == 401 and self.sa is not None:
-            print_error(
-                f"Error calling {api_name} API. Unauthorized with service account: {self.sa}. "
-                "Ensure the service account has 'iap.webServiceVersions.accessViaIap' permission.",
-                format=self.format,
+        elif self._hub_auth_config:
+            msg = (
+                f"Error calling {api_name} API. Session expired or invalid. "
+                "Run 'zipline auth login' to re-authenticate."
             )
+        elif not self.use_auth:
+            msg = (
+                f"Error calling {api_name} API. Unauthorized. "
+                "Run 'zipline auth login' to authenticate."
+            )
+        elif sa is not None:
+            msg = (
+                f"Error calling {api_name} API. Unauthorized with service account: {sa}. "
+                "Ensure the service account has 'iap.webServiceVersions.accessViaIap' permission."
+            )
+        else:
+            msg = (
+                f"Error calling {api_name} API. Unauthorized. "
+                "Set up default credentials, provide SA_NAME in teams.py, or run 'zipline auth login'."
+            )
+        raise click.ClickException(msg) from e
 
     def _generate_jwt_payload(self, service_account_email: str, resource_url: str) -> str:
         """Generates JWT payload for service account.
@@ -233,6 +342,14 @@ class ZiplineHub:
             )
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            print_error(
+                f"Error calling diff API: Invalid JSON response\n"
+                f"Response status: {response.status_code}\n"
+                f"Response text: {response.text[:500]}",
+                format=self.format
+            )
+            raise e
         except requests.RequestException as e:
             self.handle_unauth(e, "diff")
             print_error(f"Error calling diff API: {self._get_error_details(e)}", format=self.format)
@@ -252,6 +369,14 @@ class ZiplineHub:
             )
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            print_error(
+                f"Error calling upload API: Invalid JSON response\n"
+                f"Response status: {response.status_code}\n"
+                f"Response text: {response.text[:500]}",
+                format=self.format
+            )
+            raise e
         except requests.RequestException as e:
             self.handle_unauth(e, "upload")
             print_error(f"Error calling upload API: {self._get_error_details(e)}", format=self.format)
@@ -273,6 +398,14 @@ class ZiplineHub:
             )
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            print_error(
+                f"Error deploying schedule: Invalid JSON response\n"
+                f"Response status: {response.status_code}\n"
+                f"Response text: {response.text[:500]}",
+                format=self.format
+            )
+            raise e
         except requests.RequestException as e:
             self.handle_unauth(e, "schedule deploy")
             print_error(f"Error deploying schedule: {self._get_error_details(e)}", format=self.format)
@@ -317,6 +450,14 @@ class ZiplineHub:
             )
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            print_error(
+                f"Error deploying schedules: Invalid JSON response\n"
+                f"Response status: {response.status_code}\n"
+                f"Response text: {response.text[:500]}",
+                format=self.format
+            )
+            raise e
         except requests.RequestException as e:
             self.handle_unauth(e, "schedule-all")
             print_error(f"Error deploying schedules: {self._get_error_details(e)}", format=self.format)
@@ -329,9 +470,37 @@ class ZiplineHub:
             response = requests.post(url, headers=self.additional_headers(self.base_url))
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            print_error(
+                f"Error calling workflow cancel API: Invalid JSON response\n"
+                f"Response status: {response.status_code}\n"
+                f"Response text: {response.text[:500]}",
+                format=self.format
+            )
+            raise e
         except requests.RequestException as e:
             self.handle_unauth(e, "workflow cancel")
             print_error(f"Error calling workflow cancel API: {self._get_error_details(e)}", format=self.format)
+            raise e
+
+    def call_streaming_redeploy_api(self, metadata_names: list[str]) -> dict:
+        url = f"{self.base_url}/streaming/v1/redeploy"
+        request_body = {"metadataNames": metadata_names}
+        try:
+            response = requests.post(url, json=request_body, headers=self.additional_headers(self.base_url))
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            print_error(
+                f"Error calling streaming redeploy API: Invalid JSON response\n"
+                f"Response status: {response.status_code}\n"
+                f"Response text: {response.text[:500]}",
+                format=self.format,
+            )
+            raise e
+        except requests.RequestException as e:
+            self.handle_unauth(e, "streaming redeploy")
+            print_error(f"Error calling streaming redeploy API: {self._get_error_details(e)}", format=self.format)
             raise e
 
     def call_sync_api(self, branch: str, names_to_hashes: dict[str, str]) -> Optional[list[str]]:
@@ -348,6 +517,14 @@ class ZiplineHub:
             )
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            print_error(
+                f"Error calling sync API: Invalid JSON response\n"
+                f"Response status: {response.status_code}\n"
+                f"Response text: {response.text[:500]}",
+                format=self.format
+            )
+            raise e
         except requests.RequestException as e:
             self.handle_unauth(e, "sync")
             print_error(f"Error calling sync API: {self._get_error_details(e)}", format=self.format)
@@ -375,6 +552,14 @@ class ZiplineHub:
             )
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            print_error(
+                f"Error calling eval API: Invalid JSON response\n"
+                f"Response status: {response.status_code}\n"
+                f"Response text: {response.text[:500]}",
+                format=self.format
+            )
+            raise e
         except requests.RequestException as e:
             self.handle_unauth(e, "eval")
             print_error(f"Error calling eval API: {self._get_error_details(e)}", format=self.format)
@@ -401,6 +586,14 @@ class ZiplineHub:
             )
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            print_error(
+                f"Error calling schema API: Invalid JSON response\n"
+                f"Response status: {response.status_code}\n"
+                f"Response text: {response.text[:500]}",
+                format=self.format
+            )
+            raise e
         except requests.RequestException as e:
             self.handle_unauth(e, "schema")
             print_error(f"Error calling schema API: {self._get_error_details(e)}", format=self.format)
@@ -427,6 +620,14 @@ class ZiplineHub:
             )
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            print_error(
+                f"Error calling list-tables API: Invalid JSON response\n"
+                f"Response status: {response.status_code}\n"
+                f"Response text: {response.text[:500]}",
+                format=self.format
+            )
+            raise e
         except requests.RequestException as e:
             self.handle_unauth(e, "list-tables")
             print_error(f"Error calling list-tables API: {self._get_error_details(e)}", format=self.format)
@@ -466,6 +667,14 @@ class ZiplineHub:
             )
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            print_error(
+                f"Error calling workflow start API: Invalid JSON response\n"
+                f"Response status: {response.status_code}\n"
+                f"Response text: {response.text[:500]}",
+                format=self.format
+            )
+            raise e
         except requests.RequestException as e:
             self.handle_unauth(e, "workflow start")
             print_error(f"Error calling workflow start API: {self._get_error_details(e)}", format=self.format)

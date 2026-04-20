@@ -1,4 +1,4 @@
-from ai.chronon.staging_query import EngineType, StagingQuery, TableDependency
+from ai.chronon.types import EngineType, StagingQuery, TableDependency
 
 table_name = "test_table"
 partition_column = "ds"  # Your table must be partitioned by a time-based column.

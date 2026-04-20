@@ -4,7 +4,7 @@
     "executionInfo": {
       "clusterConf": {
         "common": {
-          "emr.config": "{\"releaseLabel\": \"emr-7.12.0\", \"instanceType\": \"m5.xlarge\", \"instanceCount\": 3, \"autoTerminationPolicy\": {\"idleTimeout\": 300}, \"subnetName\": \"zipline-canary-subnet-main\", \"securityGroupName\": \"zipline-canary-sg\"}"
+          "emr.config": "{\"releaseLabel\": \"emr-7.12.0\", \"instanceType\": \"m5.xlarge\", \"instanceCount\": 3, \"autoTerminationPolicy\": {\"idleTimeout\": 7200}, \"subnetName\": \"zipline-canary-subnet-main\", \"securityGroupName\": \"zipline-canary-sg\"}"
         }
       },
       "conf": {
@@ -88,7 +88,7 @@
         }
       },
       "offlineSchedule": "@daily",
-      "stepDays": 30
+      "stepDays": 10
     },
     "name": "aws.sample_staging_query.shipping__0",
     "outputNamespace": "data",

@@ -93,11 +93,7 @@ You are an expert in Chronon (feature definition API) and Zipline (CLI/platform)
 
 **✅ ALWAYS DO THIS:**
 ```python
-from ai.chronon.source import EventSource, EntitySource, JoinSource
-from ai.chronon.group_by import GroupBy, Aggregation, Operation, Accuracy
-from ai.chronon.join import Join, JoinPart, Derivation
-from ai.chronon.query import Query, selects
-from ai.chronon.staging_query import StagingQuery
+from ai.chronon.types import Accuracy, Aggregation, Derivation, EntitySource, EventSource, GroupBy, Join, JoinPart, JoinSource, Operation, Query, StagingQuery, selects
 ```
 
 **❌ NEVER DO THIS:**
@@ -298,7 +294,7 @@ zipline hub list-tables data
 
 3. **If no export exists**, create one in `staging_queries/<team>/exports.py` using the native engine type:
    ```python
-   from ai.chronon.staging_query import EngineType, StagingQuery, TableDependency
+   from ai.chronon.types import EngineType, StagingQuery, TableDependency
 
    # For BigQuery tables
    my_table_export = StagingQuery(
@@ -519,9 +515,7 @@ query=Query(
 #### Step 8: Template for EventSource GroupBy
 
 ```python
-from ai.chronon.group_by import Accuracy, Aggregation, GroupBy, Operation
-from ai.chronon.source import EventSource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Accuracy, Aggregation, EventSource, GroupBy, Operation, Query, selects
 
 v1 = GroupBy(
     sources=[
@@ -556,9 +550,7 @@ v1 = GroupBy(
 #### Step 9: Template for EntitySource Passthrough
 
 ```python
-from ai.chronon.group_by import GroupBy
-from ai.chronon.source import EntitySource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import EntitySource, GroupBy, Query, selects
 
 v1 = GroupBy(
     sources=[
@@ -586,9 +578,7 @@ v1 = GroupBy(
 For entity data that receives real-time updates via a mutation stream (e.g., Debezium CDC):
 
 ```python
-from ai.chronon.group_by import GroupBy, Aggregation, Operation
-from ai.chronon.source import EntitySource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Aggregation, EntitySource, GroupBy, Operation, Query, selects
 
 v1 = GroupBy(
     sources=[
@@ -770,7 +760,7 @@ derivations=[
 #### Step 5: Template for Adding to Join
 
 ```python
-from ai.chronon.join import Join, JoinPart, Derivation
+from ai.chronon.types import Derivation, Join, JoinPart
 
 v2 = Join(  # Increment variable name (v1 -> v2)
     left=EventSource(
@@ -825,7 +815,7 @@ StagingQueries are for complex ETL that doesn't fit the GroupBy/Join pattern.
 #### Template:
 
 ```python
-from ai.chronon.staging_query import StagingQuery, TableDependency, EngineType
+from ai.chronon.types import EngineType, StagingQuery, TableDependency
 
 v1 = StagingQuery(
     query="""
@@ -912,7 +902,7 @@ Use this for models that are already trained (Vertex AI embeddings, Bedrock mode
 **Step 1: Define the Model**
 
 ```python
-from ai.chronon.model import Model, ModelBackend, InferenceSpec
+from ai.chronon.types import InferenceSpec, Model, ModelBackend
 from ai.chronon.data_types import DataType
 
 # Define output schema (from model docs)
@@ -975,9 +965,7 @@ item_description_model = Model(
 ModelTransforms applies the model to Join output:
 
 ```python
-from ai.chronon.model import ModelTransforms
-from ai.chronon.source import JoinSource
-from ai.chronon.query import Query
+from ai.chronon.types import JoinSource, ModelTransforms, Query
 from ai.chronon.data_types import DataType
 
 # Reference the join to use as input
@@ -1023,7 +1011,7 @@ predictions[i].candidates[0].content.parts[0].text
 ```
 
 ```python
-from ai.chronon.model import Model, ModelBackend, InferenceSpec
+from ai.chronon.types import InferenceSpec, Model, ModelBackend
 from ai.chronon.data_types import DataType
 
 # Define output schema matching the Gemini predict response
@@ -1061,9 +1049,7 @@ short_description_model = Model(
 Same as Pattern A — reference a Join via JoinSource:
 
 ```python
-from ai.chronon.model import ModelTransforms
-from ai.chronon.source import JoinSource
-from ai.chronon.query import Query
+from ai.chronon.types import JoinSource, ModelTransforms, Query
 from ai.chronon.data_types import DataType
 
 source = JoinSource(
@@ -1097,7 +1083,7 @@ Use this for custom models you train yourself (e.g., XGBoost, PyTorch, TensorFlo
 **Step 1: Create Training Labels (via StagingQuery or Join)**
 
 ```python
-from ai.chronon.staging_query import StagingQuery
+from ai.chronon.types import StagingQuery, TableDependency
 
 # Create labels for training
 v1 = StagingQuery(
@@ -1119,13 +1105,7 @@ v1 = StagingQuery(
 **Step 2: Define the Model with Training + Deployment**
 
 ```python
-from ai.chronon.model import (
-    Model, ModelBackend, InferenceSpec, TrainingSpec, DeploymentSpec,
-    ResourceConfig, ServingContainerConfig, EndpointConfig, RolloutStrategy, DeploymentStrategyType
-)
-from ai.chronon.source import EventSource
-from ai.chronon.group_by import Window, TimeUnit
-from ai.chronon.query import Query, selects
+from ai.chronon.types import DeploymentSpec, DeploymentStrategyType, EndpointConfig, EventSource, InferenceSpec, Model, ModelBackend, Query, ResourceConfig, RolloutStrategy, ServingContainerConfig, TimeUnit, TrainingSpec, Window, selects
 from ai.chronon.data_types import DataType
 
 # Define training data source
@@ -1263,8 +1243,7 @@ ctr_model = Model(
 **Step 3: Create ModelTransforms for Inference**
 
 ```python
-from ai.chronon.model import ModelTransforms
-from ai.chronon.source import JoinSource
+from ai.chronon.types import JoinSource, ModelTransforms
 from ai.chronon.data_types import DataType
 
 source = JoinSource(join=demo.derivations_v1)
@@ -1378,9 +1357,7 @@ Instead of aggregating raw event or entity data, you can:
 First, create a Join that brings together the data you want to aggregate on:
 
 ```python
-from ai.chronon.join import Join, JoinPart
-from ai.chronon.source import EventSource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import EventSource, Join, JoinPart, Query, selects
 
 # Parent join that enriches events with dimension data
 parent_join = Join(
@@ -1409,7 +1386,7 @@ parent_join = Join(
 Wrap the Join in a JoinSource with a Query to select/transform columns:
 
 ```python
-from ai.chronon.source import JoinSource
+from ai.chronon.types import JoinSource
 
 upstream_join_source = JoinSource(
     join=parent_join,
@@ -1441,7 +1418,7 @@ group_by uses unwindowed aggregations on unbounded event sources
 Always specify a window (e.g., `windows=["30d"]` or `windows=[Window(length=7, time_unit=TimeUnit.DAYS)]`).
 
 ```python
-from ai.chronon.group_by import Accuracy, Aggregation, GroupBy, Operation, TimeUnit, Window
+from ai.chronon.types import Accuracy, Aggregation, GroupBy, Operation, TimeUnit, Window
 
 chained_gb = GroupBy(
     sources=[upstream_join_source],
@@ -1978,9 +1955,7 @@ v1 = GroupBy(
 # From: python/test/canary - shows GroupBy → Join → Model → ModelTransforms
 
 # Step 1: Create GroupBys with features
-from ai.chronon.group_by import GroupBy
-from ai.chronon.source import EntitySource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import EntitySource, GroupBy, Query, selects
 
 # Listing dimension features
 dim_listings_gb = GroupBy(
@@ -2004,8 +1979,7 @@ dim_listings_gb = GroupBy(
 )
 
 # Step 2: Create a Join combining features
-from ai.chronon.join import Join, JoinPart
-from ai.chronon.source import EventSource
+from ai.chronon.types import EventSource, Join, JoinPart
 
 demo_join = Join(
     left=EventSource(
@@ -2023,7 +1997,7 @@ demo_join = Join(
 )
 
 # Step 3: Define the Model (Vertex AI embedding)
-from ai.chronon.model import Model, ModelBackend, InferenceSpec
+from ai.chronon.types import InferenceSpec, Model, ModelBackend
 from ai.chronon.data_types import DataType
 
 statistics = DataType.STRUCT("statistics", ("truncated", DataType.BOOLEAN), ("token_count", DataType.INT))
@@ -2052,8 +2026,7 @@ item_description_model = Model(
 )
 
 # Step 4: Create ModelTransforms to apply inference
-from ai.chronon.model import ModelTransforms
-from ai.chronon.source import JoinSource
+from ai.chronon.types import JoinSource, ModelTransforms
 
 model_transforms = ModelTransforms(
     sources=[
@@ -2094,7 +2067,7 @@ When you want to apply a model directly to GroupBy aggregations (not a multi-sou
 
 ```python
 # Step 1: Create the GroupBy with aggregations
-from ai.chronon.group_by import Accuracy, Aggregation, GroupBy, Operation
+from ai.chronon.types import Accuracy, Aggregation, GroupBy, Operation
 
 user_features_gb = GroupBy(
     sources=[EventSource(...)],
@@ -2112,8 +2085,7 @@ user_features_gb = GroupBy(
 
 # Step 2: Create a wrapper Join to enable ModelTransforms consumption
 # (ModelTransforms can't consume GroupBys directly)
-from ai.chronon.join import Join, JoinPart
-from ai.chronon.source import EventSource
+from ai.chronon.types import EventSource, Join, JoinPart
 
 wrapper_join = Join(
     left=EventSource(
@@ -2134,8 +2106,7 @@ wrapper_join = Join(
 )
 
 # Step 3: Apply model via ModelTransforms
-from ai.chronon.model import ModelTransforms
-from ai.chronon.source import JoinSource
+from ai.chronon.types import JoinSource, ModelTransforms
 
 v1 = ModelTransforms(
     sources=[JoinSource(join=wrapper_join)],
@@ -2302,8 +2273,7 @@ users_batch = BatchSource(
 
 **Chronon:**
 ```python
-from ai.chronon.source import EntitySource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import EntitySource, Query, selects
 
 users_source = EntitySource(
     snapshot_table="data.users",
@@ -2339,8 +2309,7 @@ transactions_batch = BatchSource(
 
 **Chronon:**
 ```python
-from ai.chronon.source import EventSource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import EventSource, Query, selects
 
 transactions_source = EventSource(
     table="data.transactions",
@@ -2384,8 +2353,7 @@ transactions_stream = StreamSource(
 
 **Chronon:**
 ```python
-from ai.chronon.source import EventSource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import EventSource, Query, selects
 
 transactions_source = EventSource(
     table="data.transactions",  # Batch table
@@ -2437,9 +2405,7 @@ def user_demographics(users_df):
 
 **Chronon:**
 ```python
-from ai.chronon.group_by import GroupBy
-from ai.chronon.source import EntitySource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import EntitySource, GroupBy, Query, selects
 
 v1 = GroupBy(
     sources=[
@@ -2502,9 +2468,7 @@ def user_transaction_aggregates(transactions):
 
 **Chronon:**
 ```python
-from ai.chronon.group_by import GroupBy, Aggregation, Operation
-from ai.chronon.source import EventSource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Aggregation, EventSource, GroupBy, Operation, Query, selects
 
 v1 = GroupBy(
     sources=[
@@ -2565,9 +2529,7 @@ def transaction_ratio(request_data, user_features):
 
 **Chronon:**
 ```python
-from ai.chronon.join import Join, JoinPart, Derivation
-from ai.chronon.source import EventSource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Derivation, EventSource, Join, JoinPart, Query, selects
 
 v1 = Join(
     left=EventSource(
@@ -2635,7 +2597,7 @@ windows=["1h"]
 windows=["30m"]
 
 # Or using Window object:
-from ai.chronon.group_by import Window, TimeUnit
+from ai.chronon.types import TimeUnit, Window
 windows=[Window(length=7, time_unit=TimeUnit.DAYS)]
 ```
 
@@ -2773,9 +2735,7 @@ def user_transactions(transactions):
 
 **Chronon (Equivalent):**
 ```python
-from ai.chronon.group_by import GroupBy, Aggregation, Operation
-from ai.chronon.source import EventSource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Aggregation, EventSource, GroupBy, Operation, Query, selects
 
 v1 = GroupBy(
     sources=[
@@ -2853,9 +2813,7 @@ def user_click_features(clicks_df):
 
 **Chronon:**
 ```python
-from ai.chronon.group_by import GroupBy, Aggregation, Operation
-from ai.chronon.source import EventSource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Aggregation, EventSource, GroupBy, Operation, Query, selects
 
 v1 = GroupBy(
     sources=[
@@ -2904,9 +2862,7 @@ fraud_detection_features = FeatureService(
 
 **Chronon:**
 ```python
-from ai.chronon.join import Join, JoinPart
-from ai.chronon.source import EventSource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import EventSource, Join, JoinPart, Query, selects
 
 v1 = Join(
     left=EventSource(
@@ -2960,7 +2916,7 @@ def transaction_features(request_data, user_features):
 
 **Chronon:**
 ```python
-from ai.chronon.join import Join, JoinPart, Derivation
+from ai.chronon.types import Derivation, Join, JoinPart
 
 v1 = Join(
     left=EventSource(

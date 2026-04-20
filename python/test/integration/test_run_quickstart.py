@@ -7,6 +7,9 @@ Exercises: compile -> import staging queries -> backfill group_bys -> backfill j
 Replaces the former test_gcp_template_quickstart.py.
 """
 
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import pytest
 from click.testing import CliRunner
 
@@ -16,6 +19,7 @@ from .helpers.cli import (
     submit_fetch,
     submit_metadata_upload,
     submit_run,
+    submit_run_subprocess,
     submit_upload,
     submit_upload_to_kv,
 )
@@ -23,11 +27,13 @@ from .helpers.cli import (
 START_DS = {
     "gcp": "2023-11-01",
     "aws": "2026-01-07",
+    "azure": "2023-11-01",
 }
 
 END_DS = {
     "gcp": "2023-11-30",
-    "aws": "2026-02-10",
+    "aws": "2026-01-18",
+    "azure": "2023-11-30",
 }
 
 STAGING_QUERY_IMPORT_KEYS = {
@@ -42,16 +48,22 @@ STAGING_QUERY_IMPORT_KEYS = {
         "compiled/staging_queries/aws/exports.dim_listings__0",
         "compiled/staging_queries/aws/exports.dim_merchants__0",
     ],
+    "azure": [
+        "compiled/staging_queries/azure/exports.user_activities__0",
+        "compiled/staging_queries/azure/exports.checkouts__0",
+    ],
 }
 
 GROUP_BY_KEY = {
     "gcp": "compiled/group_bys/gcp/purchases.v1_test__0",
     "aws": "compiled/group_bys/aws/user_activities.v1__1",
+    "azure": "compiled/group_bys/azure/purchases.v1_test__0",
 }
 
 JOIN_KEY = {
     "gcp": "compiled/joins/gcp/training_set.v1_test__0",
     "aws": "compiled/joins/aws/demo.v1__1",
+    "azure": "compiled/joins/azure/training_set.v1_test__0",
 }
 
 
@@ -63,25 +75,46 @@ def test_run_quickstart(test_id, confs, chronon_root, version, cloud):
     start_ds = START_DS[cloud]
     end_ds = END_DS[cloud]
 
-    # 1. Import staging queries / run exports
-    for key in STAGING_QUERY_IMPORT_KEYS.get(cloud, []):
-        if key in confs:
-            submit_run(runner, chronon_root, confs[key], version,
-                       start_ds=start_ds, end_ds=end_ds)
+    # 1. Import staging queries / run exports (parallel — jobs are independent)
+    staging_keys = STAGING_QUERY_IMPORT_KEYS[cloud]
+    with ThreadPoolExecutor(max_workers=len(staging_keys) or 1) as pool:
+        futures = {
+            pool.submit(
+                submit_run_subprocess,
+                chronon_root, confs(key), version,
+                start_ds=start_ds, end_ds=end_ds,
+            ): key
+            for key in staging_keys
+        }
+        for future in as_completed(futures):
+            future.result()
 
     # 2. Backfill group_by
-    gb_conf = confs[GROUP_BY_KEY[cloud]]
+    gb_conf = confs(GROUP_BY_KEY[cloud])
     submit_run(runner, chronon_root, gb_conf, version,
                start_ds=start_ds, end_ds=end_ds)
 
-    # 3. Backfill join
-    join_conf = confs[JOIN_KEY[cloud]]
-    submit_run(runner, chronon_root, join_conf, version,
-               start_ds=start_ds, end_ds=end_ds)
-
+    # 3. Backfill joins (parallel — both depend on group_by, not on each other)
+    join_conf = confs(JOIN_KEY[cloud])
     notds_key = f"compiled/joins/{cloud}/training_set.v1_dev_notds__0"
-    if notds_key in confs:
-        submit_run(runner, chronon_root, confs[notds_key], version,
+    join_confs = [join_conf]
+    notds_conf = confs(notds_key)
+    if os.path.exists(os.path.join(chronon_root, notds_conf)):
+        join_confs.append(notds_conf)
+    if len(join_confs) > 1:
+        with ThreadPoolExecutor(max_workers=len(join_confs)) as pool:
+            futures = [
+                pool.submit(
+                    submit_run_subprocess,
+                    chronon_root, conf, version,
+                    start_ds=start_ds, end_ds=end_ds,
+                )
+                for conf in join_confs
+            ]
+            for future in as_completed(futures):
+                future.result()
+    else:
+        submit_run(runner, chronon_root, join_confs[0], version,
                    start_ds=start_ds, end_ds=end_ds)
 
     # Steps 4-9 are only supported by the GCP runner (Dataproc).
@@ -105,7 +138,7 @@ def test_run_quickstart(test_id, confs, chronon_root, version, cloud):
         submit_metadata_upload(runner, chronon_root, gb_conf, version)
 
         # 8. Staging query (exports)
-        exports_conf = confs[f"compiled/staging_queries/{cloud}/exports.checkouts__0"]
+        exports_conf = confs(f"compiled/staging_queries/{cloud}/exports.checkouts__0")
         submit_run(runner, chronon_root, exports_conf, version,
                    start_ds=start_ds, end_ds=end_ds)
 

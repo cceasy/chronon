@@ -4,6 +4,7 @@ import ai.chronon.api.Constants.MetadataDataset
 import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.api.planner.NodeRunner
+import ai.chronon.api.secrets.SecretResolver
 import ai.chronon.online.Api
 import ai.chronon.online.fetcher.{FetchContext, MetadataStore}
 import ai.chronon.planner.{Node, NodeContent}
@@ -18,7 +19,11 @@ class KVUploadNodeRunner(api: Api) extends NodeRunner {
 
   @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  def createFetchContext(): FetchContext = FetchContext(api.genKvStore, MetadataDataset)
+  def createFetchContext(): FetchContext = {
+    val kvStore = api.genKvStore
+    kvStore.create(MetadataDataset)
+    FetchContext(kvStore, MetadataDataset)
+  }
 
   override def run(metadata: MetaData, conf: NodeContent, range: Option[PartitionRange]): Unit = {
     conf.getSetField match {
@@ -129,7 +134,9 @@ object KVUploadNodeRunner {
     try {
       val kvArgs = new KVUploadNodeRunnerArgs(args)
 
-      val props = kvArgs.apiProps.map(identity)
+      val resolvedEnv = SecretResolver.resolveVaultUris(sys.env.toMap)
+      val driverSecrets = resolvedEnv -- sys.env.keySet
+      val props = kvArgs.apiProps.map(identity) ++ driverSecrets
       runFromArgs(kvArgs.confPath(), kvArgs.endDs(), kvArgs.onlineClass(), props) match {
         case Success(_) =>
           println("KV upload node runner completed successfully")

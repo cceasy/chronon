@@ -22,7 +22,7 @@ import ai.chronon.api._
 import ai.chronon.online.serde.SparkConversions.toChrononSchema
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
-import ai.chronon.spark.stats.StatsCompute
+import ai.chronon.spark.stats.{EnhancedStatsCompute, StatsCompute}
 import ai.chronon.spark.submission.SparkSessionBuilder
 import ai.chronon.spark.utils.{DataFrameGen, SparkTestBase}
 import org.apache.spark.sql.SparkSession
@@ -124,6 +124,51 @@ class StatsComputeTest extends AnyFlatSpec {
     val denormalized = stats.addDerivedMetrics(bucketed, aggregator)
     logger.info("With Derived Data")
     denormalized.show(truncate = false)
+  }
+
+  /** Reproduces the production crash where online buildAggregator fails with None.get when
+    * the cardinality map stored in KV is stale relative to the selectedSchema.
+    *
+    * Scenario: a numeric column was high-cardinality when the offline stats job ran (no __str column
+    * written to selectedSchema), but the online code receives an empty/stale cardinality map so it
+    * defaults the column to cardinality=0 (low-cardinality), generating a __str metric whose
+    * inputColumn doesn't exist in selectedSchema.
+    */
+  it should "fail with a clear error when cardinality map is stale causing schema mismatch" in {
+    val schema = List(
+      Column("user", StringType, 10),
+      // 10000 distinct values → cardinality well above threshold=100 → high-cardinality path
+      Column("high_card_value", LongType, 10000)
+    )
+    val df = DataFrameGen.events(spark, schema, 100000, 10)
+
+    // Offline job: build selectedSchema from EnhancedStatsCompute with true cardinality
+    val compute = new EnhancedStatsCompute(df, Seq("user"), "mismatchTest")
+    val offlineSelectedSchema =
+      StructType.from("mismatchTest", toChrononSchema(compute.enhancedSelectedDf.schema))
+
+    // high_card_value should be in the high-cardinality branch → no __str column in selectedSchema
+    val selectedCols = offlineSelectedSchema.fields.map(_.name).toSet
+    assert(!selectedCols.contains("high_card_value__str"),
+           s"high_card_value should be high-cardinality so __str must NOT be in selectedSchema, got: $selectedCols")
+
+    // Online: stale cardinality map (column missing → defaults to 0 = low-cardinality)
+    val staleCardinalityMap = Map.empty[String, Long]
+    val noKeysFields = toChrononSchema(compute.enhancedSelectedDf.schema)
+    val onlineMetrics =
+      StatsGenerator.buildEnhancedMetrics(
+        noKeysFields,
+        staleCardinalityMap,
+        cardinalityThreshold = 100
+      )
+
+    // Before the fix this was: NoSuchElementException: None.get (completely opaque)
+    // After the fix it should be IllegalArgumentException naming the missing column
+    val ex = intercept[IllegalArgumentException] {
+      StatsGenerator.buildAggregator(onlineMetrics, offlineSelectedSchema)
+    }
+    assert(ex.getMessage.contains("high_card_value__str"),
+           s"Error should name the missing column, got: ${ex.getMessage}")
   }
 
   /** Test to make sure aggregations are generated when it makes sense.

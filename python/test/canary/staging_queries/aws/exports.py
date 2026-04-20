@@ -1,4 +1,4 @@
-from ai.chronon.staging_query import EngineType, StagingQuery, TableDependency
+from ai.chronon.types import EngineType, StagingQuery, TableDependency
 
 
 def get_select_star_export(table: str, partition_column: str = "ds"):
@@ -18,7 +18,7 @@ def get_select_star_export(table: str, partition_column: str = "ds"):
             TableDependency(table=f"demo.{table}", partition_column=partition_column, offset=0)
         ],
         version=0,
-        step_days=30,
+        step_days=10,
     )
 
 
@@ -39,7 +39,7 @@ def get_native_partition_export(table: str, partition_column: str):
             TableDependency(table=f"demo.{table}", partition_column=partition_column, offset=0)
         ],
         version=0,
-        step_days=30,
+        step_days=10,
     )
 
 

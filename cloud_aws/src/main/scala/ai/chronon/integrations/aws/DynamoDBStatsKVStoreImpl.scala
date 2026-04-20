@@ -18,6 +18,8 @@ import scala.util.{Failure, Success}
 class DynamoDBStatsKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String, String] = Map.empty)
     extends DynamoDBKVStoreImpl(dynamoDbClient, conf) {
 
+  override protected val enableTtl: Boolean = false
+
   override def create(dataset: String): Unit =
     create(dataset, Map(DynamoDBKVStoreConstants.isTimedSorted -> "true"))
 

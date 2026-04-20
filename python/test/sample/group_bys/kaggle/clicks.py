@@ -15,13 +15,7 @@
 from gen_thrift.api.ttypes import EventSource, Source
 from staging_queries.kaggle.outbrain import base_table
 
-from ai.chronon.group_by import (
-    Accuracy,
-    Aggregation,
-    GroupBy,
-    Operation,
-)
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Accuracy, Aggregation, GroupBy, Operation, Query, selects
 
 """
 This GroupBy aggregates clicks by the ad_id primary key, and it is setup to resemble a streaming GroupBy.

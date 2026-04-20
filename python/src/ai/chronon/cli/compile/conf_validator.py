@@ -21,7 +21,7 @@ import sys
 import textwrap
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import gen_thrift.common.ttypes as common
 from ai.chronon.cli.compile.column_hashing import (
@@ -49,8 +49,7 @@ from gen_thrift.api.ttypes import (
 )
 
 # Fields that indicate status of the entities.
-SKIPPED_FIELDS = frozenset(["metaData"])
-EXTERNAL_KEY = "onlineExternalParts"
+SKIPPED_FIELDS = frozenset(["metaData", "onlineExternalParts"])
 
 
 @dataclass
@@ -67,13 +66,16 @@ class ConfigChange:
     is_version_change: bool = False
 
 
-def _filter_skipped_fields_from_join(json_obj: Dict, skipped_fields):
-    for join_part in json_obj["joinParts"]:
-        group_by = join_part["groupBy"]
-        for field in skipped_fields:
-            group_by.pop(field, None)
-    if EXTERNAL_KEY in json_obj:
-        json_obj.pop(EXTERNAL_KEY, None)
+def _strip_fields_recursive(obj, fields_to_strip):
+    """Recursively remove specified fields from all dicts in a JSON tree."""
+    if isinstance(obj, dict):
+        for field in fields_to_strip:
+            obj.pop(field, None)
+        for value in obj.values():
+            _strip_fields_recursive(value, fields_to_strip)
+    elif isinstance(obj, list):
+        for item in obj:
+            _strip_fields_recursive(item, fields_to_strip)
 
 
 def _is_batch_upload_needed(group_by: GroupBy) -> bool:
@@ -263,18 +265,10 @@ class ConfValidator(object):
         return errors
 
     def _has_diff(self, obj: object, old_obj: object, skipped_fields=SKIPPED_FIELDS) -> bool:
-        new_json = {
-            k: v for k, v in json.loads(thrift_simple_json(obj)).items() if k not in skipped_fields
-        }
-        old_json = {
-            k: v
-            for k, v in json.loads(thrift_simple_json(old_obj)).items()
-            if k not in skipped_fields
-        }
-        if isinstance(obj, Join):
-            _filter_skipped_fields_from_join(new_json, skipped_fields)
-            _filter_skipped_fields_from_join(old_json, skipped_fields)
-
+        new_json = json.loads(thrift_simple_json(obj))
+        old_json = json.loads(thrift_simple_json(old_obj))
+        _strip_fields_recursive(new_json, skipped_fields)
+        _strip_fields_recursive(old_json, skipped_fields)
         return new_json != old_json
 
     def safe_to_overwrite(self, obj: object) -> bool:
@@ -287,14 +281,8 @@ class ConfValidator(object):
     def _validate_time_partitioned_query(
         self, query: Optional[Query], source_context: str
     ) -> BaseException | None:
-        if query is None:
-            return None
-
-        if query.timePartitioned and query.partitionColumn is None:
-            return ValueError(
-                f"{source_context}: timePartitioned sources must have partitionColumn set to the timestamp/date column name"
-            )
-
+        # timePartitioned flag is deprecated — partition column type is detected automatically.
+        # Kept for backwards compatibility but no longer enforced.
         return None
 
     def _validate_derivations(
@@ -350,8 +338,10 @@ class ConfValidator(object):
         keys = []
 
         key_mapping = join_part.keyMapping if join_part.keyMapping else {}
+        # key_mapping is {left_col: gb_key}, so invert to resolve gb_key -> left_col
+        inverted_key_mapping = {v: k for k, v in key_mapping.items()}
         for key in join_part.groupBy.keyColumns:
-            keys.append(key_mapping.get(key, key))
+            keys.append(inverted_key_mapping.get(key, key))
 
         missing = [k for k in keys if k not in left_cols]
 
@@ -361,7 +351,7 @@ class ConfValidator(object):
         if missing:
             key_mapping_str = f"Key Mapping: {key_mapping}" if key_mapping else ""
             err_string += textwrap.dedent(f"""
-                - Join is missing keys {missing} on left side. Required for JoinPart: {group_by_name}. 
+                - Join is missing keys {missing} on left side. Required for JoinPart: {group_by_name}.
                 Existing columns on left side: {left_cols_as_str}
                 All required Keys: {join_part.groupBy.keyColumns}
                 {key_mapping_str}
@@ -562,8 +552,8 @@ class ConfValidator(object):
 
             errors.append(
                 ValueError(
-                    f"""group_by {group_by.metaData.name} uses unwindowed aggregations [{nln}{f",{nln}".join(unwindowed_aggregations)}{nln}] 
-                    on unbounded event sources: [{nln}{f",{nln}".join(unbounded_event_sources)}{nln}]. 
+                    f"""group_by {group_by.metaData.name} uses unwindowed aggregations [{nln}{f",{nln}".join(unwindowed_aggregations)}{nln}]
+                    on unbounded event sources: [{nln}{f",{nln}".join(unbounded_event_sources)}{nln}].
                     Please set a start_partition on the source, or a window on the aggregation."""
                 )
             )
@@ -713,7 +703,7 @@ class ConfValidator(object):
         if self._has_compilation_errors(compile_status):
             return  # Don't prompt when there are errors
 
-        if not hasattr(self, "_pending_changes"):
+        if not hasattr(self, "pending_changes"):
             return  # No pending changes
 
         # Check if we need user confirmation (only for non-version-bump changes)

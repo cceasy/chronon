@@ -13,7 +13,7 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from ai.chronon.staging_query import StagingQuery, TableDependency
+from ai.chronon.types import StagingQuery, TableDependency
 
 base_table = StagingQuery(
     query="""

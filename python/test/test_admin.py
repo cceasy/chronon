@@ -11,14 +11,19 @@ import pytest
 from click.testing import CliRunner
 
 from ai.chronon.repo.admin import (
+    _EKS_NAMESPACE,
+    _EKS_ROLLOUT_TIMEOUT,
+    _EKS_SERVICES,
     _authenticate_docker_hub,
     _base_domain,
     _creds_from_helper,
     _extract_jars_from_oci_archive,
     _extract_scripts_from_layer,
+    _get_current_image,
     _get_docker_credentials,
     _parse_registry,
     _should_update_latest,
+    _upgrade_eks_services,
     _upload_jars_to_store,
     _upload_scripts_to_store,
     admin,
@@ -653,12 +658,12 @@ class TestExtractJarsFromOciArchive:
         scripts_build = tmp_path / "scripts_build"
         scripts_gcp = scripts_build / "gcp"
         scripts_gcp.mkdir(parents=True)
-        (scripts_gcp / "start.sh").write_text("#!/bin/bash\nstart")
+        (scripts_gcp / "opsagent_setup.sh").write_text("#!/bin/bash\nstart")
 
         layer_tar = oci_dir / "layer.tar"
         with tarfile.open(layer_tar, "w") as tar:
             tar.add(jars_dir / "engine.jar", arcname="jars/engine.jar")
-            tar.add(scripts_gcp / "start.sh", arcname="scripts/gcp/start.sh")
+            tar.add(scripts_gcp / "opsagent_setup.sh", arcname="scripts/gcp/opsagent_setup.sh")
 
         manifest = [{"Layers": ["layer.tar"]}]
         (oci_dir / "manifest.json").write_text(json.dumps(manifest))
@@ -674,7 +679,7 @@ class TestExtractJarsFromOciArchive:
 
         uploaded_paths = [call_args[0][1] for call_args in mock_upload.call_args_list]
         assert any("jars/engine.jar" in path for path in uploaded_paths)
-        assert any("scripts/gcp/start.sh" in path for path in uploaded_paths)
+        assert any("scripts/gcp/opsagent_setup.sh" in path for path in uploaded_paths)
         assert all(status == "ok" for _, _, _, status in results)
 
     def test_handles_no_manifests(self, tmp_path):
@@ -833,3 +838,371 @@ class TestDownloadAndUploadPublicJars:
 
         upload_call_args = mock_upload.call_args
         assert upload_call_args[0][1].endswith("spark-3.5.3/libs/commons-collections4-4.4.jar")
+
+
+# --- _upgrade_eks_services ---
+
+
+def _make_subprocess_result(returncode=0, stdout="", stderr=""):
+    result = MagicMock()
+    result.returncode = returncode
+    result.stdout = stdout
+    result.stderr = stderr
+    return result
+
+
+class TestUpgradeEksServices:
+    @patch("ai.chronon.repo.admin.shutil.which", return_value=None)
+    def test_exits_when_kubectl_not_found(self, mock_which, capsys):
+        with pytest.raises(SystemExit):
+            _upgrade_eks_services("aws", "1.0.0")
+        mock_which.assert_called_once_with("kubectl")
+        output = strip_ansi(capsys.readouterr().out)
+        assert "kubectl not found" in output
+        assert "retry" in output.lower()
+
+    @patch("ai.chronon.repo.admin.shutil.which", return_value=None)
+    def test_kubectl_not_found_shows_install_link(self, mock_which, capsys):
+        with pytest.raises(SystemExit):
+            _upgrade_eks_services("aws", "1.0.0")
+        output = strip_ansi(capsys.readouterr().out)
+        assert "kubernetes.io" in output
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_exits_when_cluster_unreachable(self, mock_which, mock_run, capsys):
+        mock_run.return_value = _make_subprocess_result(returncode=1, stderr="connection refused")
+        with pytest.raises(SystemExit):
+            _upgrade_eks_services("aws", "1.0.0")
+        output = strip_ansi(capsys.readouterr().out)
+        assert "Cannot reach Kubernetes cluster" in output
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_cluster_unreachable_shows_kubeconfig_help(self, mock_which, mock_run, capsys):
+        mock_run.return_value = _make_subprocess_result(returncode=1, stderr="connection refused")
+        with pytest.raises(SystemExit):
+            _upgrade_eks_services("aws", "1.0.0")
+        output = strip_ansi(capsys.readouterr().out)
+        assert "aws eks update-kubeconfig" in output
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_skips_deployment_not_found(self, mock_which, mock_run, capsys):
+        """All deployments missing — each one should print 'not found' with explanation."""
+        def side_effect(cmd, **kwargs):
+            if "cluster-info" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "get" in cmd and "deployment" in cmd:
+                return _make_subprocess_result(returncode=1, stderr="NotFound")
+            return _make_subprocess_result(returncode=0)
+
+        mock_run.side_effect = side_effect
+        _upgrade_eks_services("aws", "1.0.0")
+        output = strip_ansi(capsys.readouterr().out)
+        for service, (deployment, _, _) in _EKS_SERVICES.items():
+            assert f"deployment/{deployment} not found" in output
+        assert "not been deployed yet" in output
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_successful_upgrade_all_services(self, mock_which, mock_run, capsys):
+        mock_run.return_value = _make_subprocess_result(returncode=0)
+        _upgrade_eks_services("aws", "1.0.0")
+        output = strip_ansi(capsys.readouterr().out)
+        assert "EKS Service Upgrade" in output
+        assert "Previous" in output
+        assert "Current" in output
+        assert "rollout complete" in output
+        assert "ok" in output
+        assert "failed" not in output.lower()
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_table_shows_previous_version(self, mock_which, mock_run, capsys):
+        """Table should show the previous version tag for upgraded services."""
+        def side_effect(cmd, **kwargs):
+            if "cluster-info" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "get" in cmd and "jsonpath" in str(cmd):
+                return _make_subprocess_result(returncode=0, stdout="ziplineai/hub-aws:0.9.0")
+            if "get" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "set" in cmd or "rollout" in cmd:
+                return _make_subprocess_result(returncode=0)
+            return _make_subprocess_result(returncode=0)
+
+        mock_run.side_effect = side_effect
+        _upgrade_eks_services("aws", "1.0.0")
+        output = strip_ansi(capsys.readouterr().out)
+        assert "0.9.0" in output
+        assert "1.0.0" in output
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_set_image_failure_exits_with_retry_message(self, mock_which, mock_run, capsys):
+        def side_effect(cmd, **kwargs):
+            if "cluster-info" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "get" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "set" in cmd:
+                return _make_subprocess_result(returncode=1, stderr="unauthorized")
+            return _make_subprocess_result(returncode=0)
+
+        mock_run.side_effect = side_effect
+        with pytest.raises(SystemExit):
+            _upgrade_eks_services("aws", "1.0.0")
+        output = strip_ansi(capsys.readouterr().out)
+        assert "FAIL" in output
+        assert "unauthorized" in output
+        assert "retry" in output.lower()
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_rollout_timeout_exits_with_retry_message(self, mock_which, mock_run, capsys):
+        def side_effect(cmd, **kwargs):
+            if "cluster-info" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "get" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "set" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "rollout" in cmd:
+                return _make_subprocess_result(returncode=1, stderr="timed out waiting")
+            return _make_subprocess_result(returncode=0)
+
+        mock_run.side_effect = side_effect
+        with pytest.raises(SystemExit):
+            _upgrade_eks_services("aws", "1.0.0")
+        output = strip_ansi(capsys.readouterr().out)
+        assert "FAIL" in output
+        assert "timed out" in output
+        assert "retry" in output.lower()
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_mixed_success_and_failure(self, mock_which, mock_run, capsys):
+        """Some services succeed, some fail — both should appear in the summary table."""
+        call_count = {"set": 0}
+
+        def side_effect(cmd, **kwargs):
+            if "cluster-info" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "get" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "set" in cmd:
+                call_count["set"] += 1
+                if call_count["set"] == 1:
+                    return _make_subprocess_result(returncode=1, stderr="image pull error")
+                return _make_subprocess_result(returncode=0)
+            if "rollout" in cmd:
+                return _make_subprocess_result(returncode=0)
+            return _make_subprocess_result(returncode=0)
+
+        mock_run.side_effect = side_effect
+        with pytest.raises(SystemExit):
+            _upgrade_eks_services("aws", "1.0.0")
+        output = strip_ansi(capsys.readouterr().out)
+        assert "FAIL" in output
+        assert "rollout complete" in output
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_restarts_services_already_on_target_version(self, mock_which, mock_run, capsys):
+        """Services already on target image should be restarted via rollout restart."""
+        def side_effect(cmd, **kwargs):
+            if "cluster-info" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "get" in cmd and "deployment" in cmd and "jsonpath" not in str(cmd):
+                return _make_subprocess_result(returncode=0)
+            if "jsonpath" in str(cmd):
+                for _svc, (dep, _cont, tmpl) in _EKS_SERVICES.items():
+                    if dep in str(cmd):
+                        return _make_subprocess_result(
+                            returncode=0, stdout=tmpl.format(cloud="aws") + ":1.0.0"
+                        )
+                return _make_subprocess_result(returncode=0, stdout="")
+            return _make_subprocess_result(returncode=0)
+
+        mock_run.side_effect = side_effect
+        _upgrade_eks_services("aws", "1.0.0")
+        output = strip_ansi(capsys.readouterr().out)
+        assert "already on 1.0.0" in output
+        assert "restarting" in output.lower()
+        assert "restart complete" in output
+        # Should use rollout restart, not set image
+        restart_calls = [c for c in mock_run.call_args_list if "rollout" in c[0][0] and "restart" in c[0][0]]
+        assert len(restart_calls) == len(_EKS_SERVICES)
+        set_calls = [c for c in mock_run.call_args_list if "set" in c[0][0]]
+        assert len(set_calls) == 0
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_image_tags_use_correct_cloud_and_release(self, mock_which, mock_run, capsys):
+        """Verify kubectl set image is called with the correct image:tag for each service."""
+        set_image_calls = []
+
+        def side_effect(cmd, **kwargs):
+            if "cluster-info" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "get" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "set" in cmd:
+                set_image_calls.append(cmd)
+                return _make_subprocess_result(returncode=0)
+            if "rollout" in cmd:
+                return _make_subprocess_result(returncode=0)
+            return _make_subprocess_result(returncode=0)
+
+        mock_run.side_effect = side_effect
+        _upgrade_eks_services("aws", "2.5.0")
+
+        assert len(set_image_calls) == len(_EKS_SERVICES)
+        for cmd in set_image_calls:
+            container_image_arg = cmd[4]  # "container=image:tag"
+            assert ":2.5.0" in container_image_arg
+        # Check cloud-specific images contain "aws"
+        cloud_specific = [c[4] for c in set_image_calls if "hub" in c[3] or "eval" in c[3]]
+        for arg in cloud_specific:
+            assert "aws" in arg
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_uses_correct_namespace(self, mock_which, mock_run):
+        """All kubectl calls should use the _EKS_NAMESPACE constant."""
+        mock_run.return_value = _make_subprocess_result(returncode=0)
+        _upgrade_eks_services("aws", "1.0.0")
+        for c in mock_run.call_args_list:
+            cmd = c[0][0]
+            assert _EKS_NAMESPACE in cmd or _EKS_NAMESPACE in str(cmd)
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_uses_correct_rollout_timeout(self, mock_which, mock_run):
+        """Rollout status should use _EKS_ROLLOUT_TIMEOUT."""
+        mock_run.return_value = _make_subprocess_result(returncode=0)
+        _upgrade_eks_services("aws", "1.0.0")
+        rollout_calls = [c[0][0] for c in mock_run.call_args_list if "rollout" in c[0][0]]
+        for cmd in rollout_calls:
+            assert f"--timeout={_EKS_ROLLOUT_TIMEOUT}s" in cmd
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_no_table_when_all_deployments_missing(self, mock_which, mock_run, capsys):
+        """If every deployment is missing, no summary table should be printed."""
+        def side_effect(cmd, **kwargs):
+            if "cluster-info" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "get" in cmd:
+                return _make_subprocess_result(returncode=1)
+            return _make_subprocess_result(returncode=0)
+
+        mock_run.side_effect = side_effect
+        _upgrade_eks_services("aws", "1.0.0")
+        output = strip_ansi(capsys.readouterr().out)
+        assert "EKS Service Upgrade" not in output
+
+    @patch("ai.chronon.repo.admin.subprocess.run")
+    @patch("ai.chronon.repo.admin.shutil.which", return_value="/usr/local/bin/kubectl")
+    def test_partial_deployment_existence(self, mock_which, mock_run, capsys):
+        """Only existing deployments are upgraded; missing ones are skipped."""
+        existing_deployment = "zipline-orchestration-hub"
+
+        def side_effect(cmd, **kwargs):
+            if "cluster-info" in cmd:
+                return _make_subprocess_result(returncode=0)
+            if "get" in cmd and "deployment" in cmd:
+                if existing_deployment in cmd:
+                    return _make_subprocess_result(returncode=0)
+                return _make_subprocess_result(returncode=1)
+            if "set" in cmd or "rollout" in cmd:
+                return _make_subprocess_result(returncode=0)
+            return _make_subprocess_result(returncode=0)
+
+        mock_run.side_effect = side_effect
+        _upgrade_eks_services("aws", "1.0.0")
+        output = strip_ansi(capsys.readouterr().out)
+        assert "rollout complete" in output
+        assert "not found" in output
+
+
+class TestUpgradeCommand:
+    # --- control-plane subcommand ---
+
+    @patch("ai.chronon.repo.admin._upgrade_eks_services")
+    @patch("ai.chronon.repo.admin.get_package_version", return_value="1.0.0")
+    def test_upgrade_control_plane_aws_with_release(self, mock_ver, mock_upgrade):
+        runner = CliRunner()
+        result = runner.invoke(admin, ["upgrade", "control-plane", "aws", "--release", "1.4.2"])
+        assert result.exit_code == 0
+        mock_upgrade.assert_called_once_with("aws", "1.4.2")
+
+    @patch("ai.chronon.repo.admin._upgrade_eks_services")
+    @patch("ai.chronon.repo.admin.get_package_version", return_value="1.0.0")
+    def test_upgrade_control_plane_defaults_to_package_version(self, mock_ver, mock_upgrade):
+        runner = CliRunner()
+        result = runner.invoke(admin, ["upgrade", "control-plane", "aws"])
+        assert result.exit_code == 0
+        mock_upgrade.assert_called_once_with("aws", "1.0.0")
+
+    @patch("ai.chronon.repo.admin._upgrade_eks_services")
+    def test_upgrade_control_plane_gcp_rejected(self, mock_upgrade):
+        runner = CliRunner()
+        result = runner.invoke(admin, ["upgrade", "control-plane", "gcp"])
+        assert result.exit_code != 0
+        mock_upgrade.assert_not_called()
+        assert "only supported for AWS" in result.output
+
+    @patch("ai.chronon.repo.admin._upgrade_eks_services")
+    @patch("ai.chronon.repo.admin.get_package_version", return_value="unknown")
+    def test_upgrade_control_plane_unknown_version_no_release_fails(self, mock_ver, mock_upgrade):
+        runner = CliRunner()
+        result = runner.invoke(admin, ["upgrade", "control-plane", "aws"])
+        assert result.exit_code != 0
+        mock_upgrade.assert_not_called()
+        assert "--release" in result.output
+
+    # --- data-plane subcommand ---
+
+    @patch("ai.chronon.repo.admin.redeploy_streaming")
+    def test_upgrade_data_plane_calls_redeploy(self, mock_redeploy, canary):
+        runner = CliRunner()
+        result = runner.invoke(admin, [
+            "upgrade", "data-plane",
+            "compiled/group_bys/aws/dim_listings.v1__0",
+            "--repo", canary,
+            "--no-use-auth",
+        ])
+        assert result.exit_code == 0
+        mock_redeploy.assert_called_once()
+        call_kwargs = mock_redeploy.call_args[1]
+        assert call_kwargs["repo"] == canary
+        assert call_kwargs["confs"] == ["compiled/group_bys/aws/dim_listings.v1__0"]
+        assert call_kwargs["use_auth"] is False
+
+    @patch("ai.chronon.repo.admin.redeploy_streaming")
+    def test_upgrade_data_plane_multiple_confs(self, mock_redeploy, canary):
+        runner = CliRunner()
+        result = runner.invoke(admin, [
+            "upgrade", "data-plane",
+            "compiled/group_bys/aws/dim_listings.v1__0",
+            "compiled/group_bys/aws/dim_merchants.v1__0",
+            "--repo", canary,
+            "--no-use-auth",
+        ])
+        assert result.exit_code == 0
+        call_kwargs = mock_redeploy.call_args[1]
+        assert set(call_kwargs["confs"]) == {
+            "compiled/group_bys/aws/dim_listings.v1__0",
+            "compiled/group_bys/aws/dim_merchants.v1__0",
+        }
+
+    def test_upgrade_data_plane_no_confs_fails(self, canary):
+        runner = CliRunner()
+        result = runner.invoke(admin, [
+            "upgrade", "data-plane",
+            "--repo", canary,
+            "--no-use-auth",
+        ])
+        assert result.exit_code != 0

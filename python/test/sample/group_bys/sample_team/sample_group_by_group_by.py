@@ -17,7 +17,7 @@ from group_bys.sample_team.sample_group_by import require_backfill
 from sources import sample_sources
 
 from ai.chronon import utils
-from ai.chronon.group_by import Aggregation, GroupBy, Operation
+from ai.chronon.types import Aggregation, GroupBy, Operation
 
 v1 = GroupBy(
     sources=sample_sources.basic_event_source(require_backfill.table),

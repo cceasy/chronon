@@ -1,4 +1,4 @@
-from ai.chronon.staging_query import EngineType, StagingQuery, TableDependency
+from ai.chronon.types import EngineType, StagingQuery, TableDependency
 
 dim_listings = StagingQuery(
     query="""

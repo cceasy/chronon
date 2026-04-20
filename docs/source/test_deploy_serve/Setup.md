@@ -18,9 +18,8 @@ Every Chronon project has a `teams.py` file at its root. Each top-level variable
 The `default` team provides base settings that all other teams inherit from.
 
 ```python
-from gen_thrift.api.ttypes import Team
 from ai.chronon.repo.spark_catalog_confs import *
-from ai.chronon.types import ConfigProperties, EnvironmentVariables
+from ai.chronon.types import ConfigProperties, EnvironmentVariables, Team
 
 default = Team(
     description="Default team",
@@ -268,11 +267,9 @@ These Spark properties control Chronon-specific behavior and should be set in `c
 Here is a complete example of a `teams.py` with a default team and a GCP team:
 
 ```python
-from gen_thrift.api.ttypes import Team
-
 from ai.chronon.repo.constants import RunMode
 from ai.chronon.repo.spark_catalog_confs import *
-from ai.chronon.types import ConfigProperties, EnvironmentVariables
+from ai.chronon.types import ConfigProperties, EnvironmentVariables, Team
 
 default = Team(
     description="Default team",

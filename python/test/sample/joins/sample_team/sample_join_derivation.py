@@ -23,7 +23,7 @@ from group_bys.sample_team import (
 )
 from sources import sample_sources
 
-from ai.chronon.join import Derivation, Join, JoinPart
+from ai.chronon.types import Derivation, Join, JoinPart
 
 v2 = Join(
     left=sample_sources.event_source,

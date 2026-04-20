@@ -21,8 +21,8 @@ object SnowflakeConnector {
 
   def extractPemBase64(pemContent: String): String =
     pemContent
-      .replaceAll("-----BEGIN.*-----", "")
-      .replaceAll("-----END.*-----", "")
+      .replaceFirst("-----BEGIN[^-]*-----", "")
+      .replaceFirst("-----END[^-]*-----", "")
       .replaceAll("\\s", "")
 
   def buildSparkConnectorOptions(jdbcUrl: String, pemContent: String): Map[String, String] = {
@@ -30,7 +30,6 @@ object SnowflakeConnector {
     val pemBase64 = extractPemBase64(pemContent)
     def require(key: String, label: String): String =
       params.getOrElse(key, throw new IllegalStateException(s"$label missing in SNOWFLAKE_JDBC_URL"))
-
     Map(
       "sfURL" -> jdbcUrl.split("\\?").head.replace("jdbc:snowflake://", ""),
       "pem_private_key" -> pemBase64,

@@ -1,8 +1,6 @@
-from gen_thrift.api.ttypes import EventSource, Source
 from staging_queries.quickstart import exports
 
-from ai.chronon.group_by import Aggregation, GroupBy, Operation, TimeUnit, Window
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Aggregation, EventSource, GroupBy, Operation, Query, TimeUnit, Window, selects
 from ai.chronon.types import EnvironmentVariables
 
 """
@@ -13,11 +11,10 @@ with last_k, sum, and average aggregations over multiple time windows.
 event_time_ms is already in milliseconds — no conversion needed (unlike GCP/BigQuery).
 """
 
-source = Source(
-    events=EventSource(
-        table=exports.user_activities.table,
-        topic="user_activities_stream",
-        query=Query(
+source = EventSource(
+    table=exports.user_activities.table,
+    topic="user_activities_stream",
+    query=Query(
             selects=selects(
                 user_id="user_id",
                 listing_id="listing_id",
@@ -35,8 +32,7 @@ source = Source(
                 user_event_struct="struct(event_type, listing_id, event_time_ms as timestamp)",
             ),
             time_column="event_time_ms",  # Already in milliseconds
-        ),
-    )
+    ),
 )
 
 # Define window sizes for aggregations (1d, 7d, 14d, 30d)

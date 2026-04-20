@@ -22,7 +22,7 @@ from group_bys.sample_team import (
 )
 from sources import sample_sources
 
-from ai.chronon.join import Join, JoinPart
+from ai.chronon.types import Join, JoinPart
 
 v1 = Join(
     left=sample_sources.staging_entities,

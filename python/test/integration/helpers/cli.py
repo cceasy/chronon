@@ -3,6 +3,8 @@
 import json
 import os
 import shutil
+import subprocess
+import sys
 
 from ai.chronon.repo.zipline import zipline
 
@@ -103,6 +105,40 @@ def submit_run(runner, chronon_root, conf, version, mode="backfill", start_ds=No
     result = runner.invoke(zipline, args, catch_exceptions=False)
     assert result.exit_code == 0, f"zipline run failed:\n{result.output}"
     return result
+
+
+_WRAPPER_SCRIPT = os.path.join(os.path.dirname(__file__), "_run_zipline.py")
+
+
+def submit_run_subprocess(chronon_root, conf, version, mode="backfill",
+                          start_ds=None, end_ds=None, extra_args=None, timeout_s=1800):
+    """Thread-safe ``zipline run`` via subprocess (Click's CliRunner is not thread-safe).
+
+    Uses _run_zipline.py wrapper which force-exits with os._exit() to
+    avoid hanging on GCP SDK daemon thread cleanup.
+    """
+    cmd = [sys.executable, _WRAPPER_SCRIPT,
+           "run", conf, f"--repo={chronon_root}", f"--version={version}", f"--mode={mode}"]
+    if start_ds:
+        cmd.append(f"--start-ds={start_ds}")
+    if end_ds:
+        cmd.append(f"--end-ds={end_ds}")
+    if extra_args:
+        cmd.extend(extra_args)
+    env = os.environ.copy()
+    env["PYTHONHASHSEED"] = "0"
+    env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p)
+    try:
+        result = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, env=env, timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AssertionError(
+            f"zipline run timed out after {timeout_s}s:\n{exc.stdout or ''}"
+        ) from exc
+    assert result.returncode == 0, \
+        f"zipline run failed (exit {result.returncode}):\n{result.stdout}"
 
 
 def submit_check_partitions(runner, chronon_root, conf, version, partition_names):

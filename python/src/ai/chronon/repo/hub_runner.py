@@ -1,3 +1,4 @@
+import functools
 import json
 import logging
 import os
@@ -14,7 +15,7 @@ from ai.chronon.cli.formatter import (
     format_print,
     jsonify_exceptions_if_json_format,
 )
-from ai.chronon.cli.git_utils import get_current_branch, get_git_user_email
+from ai.chronon.cli.git_utils import get_current_branch
 from ai.chronon.cli.theme import (
     print_error,
     print_info,
@@ -25,14 +26,56 @@ from ai.chronon.cli.theme import (
 )
 from ai.chronon.click_helpers import handle_compile, handle_conf_not_found, handle_dry_run_compile
 from ai.chronon.repo import hub_uploader, utils
+from ai.chronon.repo.auth import get_user_email
 from ai.chronon.repo.constants import VALID_CLOUDS, RunMode
 from ai.chronon.repo.utils import print_possible_confs, upload_to_blob_store
 from ai.chronon.repo.zipline_hub import ZiplineHub
-from ai.chronon.schedule_validation import validate_at_most_daily_schedule
 from gen_thrift.api.ttypes import DataKind
 from gen_thrift.planner.ttypes import Mode
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_at_most_daily_schedule(schedule_expression: str) -> Optional[str]:
+    """Validates that a schedule expression runs at most once per day.
+    Returns None if valid, error message string if invalid."""
+    import datetime
+
+    from croniter import croniter
+
+    if not schedule_expression or schedule_expression.strip().lower() in ("", "none", "null", "@daily", "@never"):
+        return None
+
+    schedule_expression = schedule_expression.strip()
+
+    try:
+        croniter(schedule_expression, datetime.datetime(2024, 1, 1, 0, 0))
+    except (ValueError, TypeError) as e:
+        return f"Invalid cron expression syntax: {e}"
+
+    try:
+        test_start = datetime.datetime(2024, 1, 1, 0, 0)
+        for day_offset in range(7):
+            day_start = test_start + datetime.timedelta(days=day_offset)
+            day_end = day_start + datetime.timedelta(days=1)
+            cron_start = day_start - datetime.timedelta(seconds=1)
+            cron = croniter(schedule_expression, cron_start)
+            executions_in_day = 0
+            for _ in range(200):
+                next_run = cron.get_next(datetime.datetime)
+                if next_run >= day_end:
+                    break
+                executions_in_day += 1
+                if executions_in_day > 1:
+                    return (
+                        f"Schedule runs {executions_in_day} times on "
+                        f"{day_start.strftime('%A')} ({day_start.strftime('%Y-%m-%d')}). "
+                        f"Only at-most-daily schedules are allowed."
+                    )
+    except Exception as e:
+        return f"Error validating schedule frequency: {e}"
+
+    return None
 
 
 ALLOWED_DATE_FORMATS = ["%Y-%m-%d"]
@@ -197,8 +240,36 @@ def start_ds_option(func):
     )(func)
 
 
+def confirm_end_ds_not_future(end_ds, assume_yes: bool = False):
+    """Abort with a confirm prompt if end_ds is today or later.
+
+    Data for today (and beyond) typically hasn't landed yet, so a backfill
+    covering that range will silently produce partial or empty output.
+
+    When assume_yes is True the prompt is skipped (non-interactive callers /
+    CI pipelines that have explicitly opted in to the risk).
+    """
+    if end_ds is None or assume_yes:
+        return
+    end_date_value = end_ds.date() if hasattr(end_ds, "date") else end_ds
+    today = date.today()
+    if end_date_value >= today:
+        click.confirm(
+            click.style(
+                f"End date {end_date_value} is today or in the future. Upstream data may not have "
+                "landed yet, so the backfill could be incomplete. Proceed anyway?",
+                fg="yellow",
+            ),
+            abort=True,
+        )
+
+
 def end_ds_option(func):
-    return click.option(
+    """Adds --end-date / --end-ds and a bundled --yes/--assume-yes flag, and
+    automatically prompts the user to confirm if end_ds is today or in the
+    future. The prompt is skipped when --yes is passed.
+    """
+    @click.option(
         "--end-date",
         "--end-ds",
         "end_ds",
@@ -206,7 +277,26 @@ def end_ds_option(func):
         type=click.DateTime(formats=ALLOWED_DATE_FORMATS),
         default=str(date.today() - timedelta(days=2)),
         show_default=True,
-    )(func)
+    )
+    @click.option(
+        "-y",
+        "--yes",
+        "--assume-yes",
+        "assume_yes",
+        is_flag=True,
+        default=False,
+        help="Skip the end-date confirmation prompt. Use in non-interactive CI where "
+        "stdin isn't a TTY and the prompt would otherwise abort the job.",
+    )
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        confirm_end_ds_not_future(
+            kwargs.get("end_ds"),
+            assume_yes=kwargs.get("assume_yes", False),
+        )
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 def _get_zipline_hub(
@@ -228,7 +318,55 @@ def _get_zipline_hub(
         cloud_provider=hub_conf.cloud_provider,
         scope=scope,
         format=format,
+        auth_url=hub_conf.frontend_url,
     )
+
+
+def redeploy_streaming(repo, confs, hub_url=None, use_auth=True, format: Format = Format.TEXT):
+    hub_confs = [get_hub_conf(conf, root_dir=repo) for conf in confs]
+    hub_urls = {hc.hub_url for hc in hub_confs}
+    if len(hub_urls) > 1:
+        mismatches = "\n".join(
+            f"  {conf}: {hc.hub_url}" for conf, hc in zip(confs, hub_confs, strict=True)
+        )
+        raise ValueError(
+            f"All confs must target the same Hub, but found multiple hub_url values:\n{mismatches}"
+        )
+    hub_conf = hub_confs[0]
+    zipline_hub = _get_zipline_hub(hub_url, hub_conf, use_auth, format)
+
+    with status_spinner("Computing local conf hashes...", format=format):
+        conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
+    branch = get_current_branch()
+    with status_spinner("Syncing confs with Hub...", format=format):
+        hub_uploader.compute_and_upload_diffs(
+            branch, zipline_hub=zipline_hub, local_repo_confs=conf_name_to_hash_dict, format=format
+        )
+
+    metadata_names = [utils.get_metadata_name_from_conf(repo, conf) for conf in confs]
+
+    with status_spinner(f"Requesting redeploy for {len(metadata_names)} streaming job(s)...", format=format):
+        response = zipline_hub.call_streaming_redeploy_api(metadata_names)
+
+    failure_count = response.get("failureCount", 0)
+
+    if format == Format.JSON:
+        print(json.dumps(response, indent=4))
+        sys.exit(1 if failure_count > 0 else 0)
+
+    for result in response.get("results", []):
+        name = result.get("metadataName", "unknown")
+        if result.get("success"):
+            print_success(f"Redeploy initiated for {name}", format=format)
+        else:
+            print_error(f"Failed: {name}: {result.get('message', '')}", format=format)
+
+    print_key_value("Total", response.get("totalCount", 0), format=format)
+    print_key_value("Succeeded", response.get("successCount", 0), format=format)
+    print_key_value("Failed", failure_count, format=format)
+
+    if failure_count > 0:
+        sys.exit(1)
 
 
 def submit_schedule_all(
@@ -398,7 +536,7 @@ def submit_workflow(
             conf_name=conf_name,
             mode=mode,
             branch=branch,
-            user=get_git_user_email(),
+            user=get_user_email(),
             start=start_ds,
             end=end_ds,
             conf_hash=conf_name_to_hash_dict[conf_name].hash,
@@ -489,6 +627,7 @@ def backfill(
     force,
     start_ds,
     end_ds,
+    assume_yes,
     skip_compile,
 ):
     """Submit a backfill job to Zipline Hub.
@@ -524,6 +663,7 @@ def run_adhoc(
     format,
     force,
     end_ds,
+    assume_yes,
     skip_compile,
 ):
     """Submit a one-off deploy job to test a conf online.
@@ -809,6 +949,7 @@ def eval(
         cloud_provider=hub_conf.cloud_provider,
         scope=scope,
         format=format,
+        auth_url=hub_conf.frontend_url,
     )
     conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
     branch = get_current_branch()
@@ -931,6 +1072,7 @@ def eval_table(
         cloud_provider=hub_conf.cloud_provider,
         scope=scope,
         format=format,
+        auth_url=hub_conf.frontend_url,
     )
 
     execution_info = (
@@ -1020,6 +1162,7 @@ def list_tables(schema_name, repo, team, hub_url, use_auth, format, eval_url, en
         cloud_provider=hub_conf.cloud_provider,
         scope=scope,
         format=format,
+        auth_url=hub_conf.frontend_url,
     )
 
     response_json = zipline_hub.call_list_tables_api(
@@ -1107,6 +1250,10 @@ def get_schedule_modes(conf_path: str):
     online_schedule = metadata_map["executionInfo"].get("onlineSchedule", None)
     offline_schedule = metadata_map["executionInfo"].get("offlineSchedule", None)
 
+    # "@never" explicitly disables online scheduling
+    if online_schedule == "@never":
+        online_schedule = None
+
     # Check if "online" is True before proceeding with online_schedule
     is_online = metadata_map.get("online", False)
     if not is_online:
@@ -1114,12 +1261,12 @@ def get_schedule_modes(conf_path: str):
 
     # Validate schedule expressions using croniter-based validation
     if offline_schedule:
-        validation_error = validate_at_most_daily_schedule(offline_schedule)
+        validation_error = _validate_at_most_daily_schedule(offline_schedule)
         if validation_error:
             raise ValueError(f"Invalid offline_schedule: {validation_error}")
 
     if online_schedule:
-        validation_error = validate_at_most_daily_schedule(online_schedule)
+        validation_error = _validate_at_most_daily_schedule(online_schedule)
         if validation_error:
             raise ValueError(f"Invalid online_schedule: {validation_error}")
 

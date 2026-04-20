@@ -1,20 +1,16 @@
-from gen_thrift.api.ttypes import EventSource, Source
 from group_bys.gcp import item_event_canary, purchases
 
-from ai.chronon.join import Join, JoinPart
-from ai.chronon.query import Query, selects
+from ai.chronon.types import EventSource, Join, JoinPart, Query, selects
 
-source = Source(
-    events=EventSource(
-        table="data.item_events_parquet_compat",
-        query=Query(
-            selects=selects(
-              listing_id="EXPLODE(TRANSFORM(SPLIT(COALESCE(attributes['sold_listing_ids'], attributes['listing_id']), ','), e -> CAST(e AS LONG)))",
-              user_id="attributes['user_id']",
-            ),
-            time_column="timestamp",
+source = EventSource(
+    table="data.item_events_parquet_compat",
+    query=Query(
+        selects=selects(
+          listing_id="EXPLODE(TRANSFORM(SPLIT(COALESCE(attributes['sold_listing_ids'], attributes['listing_id']), ','), e -> CAST(e AS LONG)))",
+          user_id="attributes['user_id']",
         ),
-    )
+        time_column="timestamp",
+    ),
 )
 
 # Join with just a streaming GB

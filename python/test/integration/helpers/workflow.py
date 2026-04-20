@@ -20,9 +20,17 @@ TERMINAL_STATUSES = {"SUCCEEDED", "FAILED", "CANCELLED", "UNKNOWN"}
 
 def _get_auth_headers() -> dict:
     headers = {}
-    token = os.environ.get("GCP_ID_TOKEN") or os.environ.get("AWS_ID_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    zipline_token = os.environ.get("ZIPLINE_TOKEN")
+    if zipline_token:
+        from ai.chronon.repo.token_exchange import resolve_token
+
+        auth_url = os.environ.get("ZIPLINE_AUTH_URL")
+        jwt = resolve_token(zipline_token, auth_url)
+        headers["Authorization"] = f"Bearer {jwt}"
+    else:
+        token = os.environ.get("GCP_ID_TOKEN") or os.environ.get("AWS_ID_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
     return headers
 
 
@@ -49,10 +57,10 @@ def poll_workflow_until(
     raises ``RuntimeError``.  If the timeout expires, raises ``AssertionError``.
     """
     url = f"{hub_url}/workflow/v2/{workflow_id}"
-    headers = _get_auth_headers()
 
     deadline = time.time() + timeout
     while True:
+        headers = _get_auth_headers()
         resp = requests.get(url, headers=headers)
         resp.raise_for_status()
         data = resp.json()

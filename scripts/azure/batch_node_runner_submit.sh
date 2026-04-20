@@ -1,10 +1,12 @@
 # Batch Node Runner manual submission requires some credentials for open catalog.
 # This is for Azure + Polaris // Snow_OC
+set -x
 spark-submit \
       --class ai.chronon.spark.batch.BatchNodeRunner \
       --master "local[1]" \
       --driver-memory 1g \
       --executor-memory 1g \
+      --conf "spark.driver.extraJavaOptions=-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005" \
       --conf spark.app.name=spark-azure_exports_dim_listings__0__staging-local-test \
       --conf spark.chronon.coalesce.factor=10 \
       --conf spark.chronon.partition.column=ds \
@@ -15,7 +17,8 @@ spark-submit \
       --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
       --conf spark.kryo.registrator=ai.chronon.spark.submission.ChrononKryoRegistrator \
       --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkCatalog \
-      --conf spark.sql.catalog.spark_catalog.credential=${OC_CRENDENTIAL-client_id:client_secret} \
+      --conf spark.chronon.table.format_provider.class=ai.chronon.integrations.cloud_azure.AzureFormatProvider \
+      --conf spark.sql.catalog.spark_catalog.credential=${OC_CREDENTIAL-client_id:client_secret} \
       --conf spark.sql.catalog.spark_catalog.header.X-Iceberg-Access-Delegation=vended-credentials \
       --conf spark.sql.catalog.spark_catalog.scope=PRINCIPAL_ROLE:${OC_ROLE-all} \
       --conf spark.sql.catalog.spark_catalog.type=rest \
@@ -37,4 +40,7 @@ spark-submit \
 	  --online-class=ai.chronon.integrations.cloud_azure.AzureApiImpl \
 	  -ZAZURE_STORAGE_ACCOUNT_NAME=$AZ_STORAGE \
 	  -ZAZURE_REGION=$AZ_REGION \
-	  -ZENABLE_UPLOAD_CLIENTS=true
+	  -ZENABLE_UPLOAD_CLIENTS=true \
+      -ZCOSMOS_KEY=$COSMOS_KEY \
+      -ZCOSMOS_ENDPOINT=$COSMOS_ENDPOINT \
+      -ZCOSMOS_DATABASE=$COSMOS_DATABASE

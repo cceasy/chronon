@@ -8,7 +8,15 @@ from typing import Any, Dict, Optional, Union
 
 from ai.chronon.cli.logger import get_logger
 from ai.chronon.cli.theme import console
-from gen_thrift.api.ttypes import Join, JoinPart, MetaData, Model, ModelTransforms, Team
+from gen_thrift.api.ttypes import (
+    GroupBy,
+    Join,
+    MetaData,
+    Model,
+    ModelTransforms,
+    StagingQuery,
+    Team,
+)
 from gen_thrift.common.ttypes import (
     ClusterConfigProperties,
     ConfigProperties,
@@ -117,43 +125,54 @@ def update_metadata(obj: Any, team_dict: Dict[str, Team]):
         f"'{_DEFAULT_CONF_TEAM}' team not found in teams.py, please add an entry 🙏."
     )
 
-    # Only set the outputNamespace if it hasn't been set already
     if not metadata.outputNamespace:
         metadata.outputNamespace = team_dict[team].outputNamespace
 
-    def set_join_part_or_models_metadata(part: Union[JoinPart, Model], output_namespace):
-        if part is not None:
-            if part.metaData:
-                # Only set the outputNamespace if it hasn't been set already
-                if not part.metaData.outputNamespace:
-                    part.metaData.outputNamespace = output_namespace
-                if not part.metaData.team:
-                    part.metaData.team = team
-            else:
-                # If there's no metaData at all, create it and set outputNamespace
-                part.metaData = MetaData()
-                part.metaData.outputNamespace = output_namespace
-                part.metaData.team = team
+    namespace = metadata.outputNamespace
 
-            merge_team_execution_info(part.metaData, team_dict, part.metaData.team)
+    def _propagate_namespace(node):
+        """Recursively propagate outputNamespace and team to all nested metadata."""
+        if node is None:
+            return
+        if isinstance(node, (GroupBy, Join, Model, ModelTransforms, StagingQuery)):
+            if not node.metaData:
+                node.metaData = MetaData()
+            if not node.metaData.team:
+                node.metaData.team = team
+            if not node.metaData.outputNamespace:
+                resolved_team = team_dict.get(node.metaData.team)
+                node.metaData.outputNamespace = (
+                    resolved_team.outputNamespace if resolved_team and resolved_team.outputNamespace else namespace
+                )
+            if node.metaData.team not in team_dict:
+                raise ValueError(
+                    f"Team '{node.metaData.team}' referenced by '{node.metaData.name}' not found in teams.py"
+                )
+            merge_team_execution_info(node.metaData, team_dict, node.metaData.team)
 
-    if isinstance(obj, Join):
-        join_namespace = obj.metaData.outputNamespace
-        if obj.joinParts:
-            for jp in obj.joinParts or []:
-                jp.useLongNames = obj.useLongNames
-                set_join_part_or_models_metadata(jp.groupBy, join_namespace)
-    elif isinstance(obj, ModelTransforms):
-        model_transforms_namespace = obj.metaData.outputNamespace
+        if isinstance(node, Join):
+            for jp in node.joinParts or []:
+                jp.useLongNames = getattr(node, "useLongNames", jp.useLongNames)
+                _propagate_namespace(jp.groupBy)
+        if isinstance(node, ModelTransforms):
+            for m in node.models or []:
+                _propagate_namespace(m)
 
-        if obj.models:
-            for m in obj.models or []:
-                set_join_part_or_models_metadata(m, model_transforms_namespace)
+        def _recurse_into_sources(sources):
+            for src in sources or []:
+                if src is None:
+                    continue
+                if src.joinSource and src.joinSource.join:
+                    _propagate_namespace(src.joinSource.join)
+                if src.modelTransforms:
+                    _propagate_namespace(src.modelTransforms)
 
-    if metadata.executionInfo is None:
-        metadata.executionInfo = ExecutionInfo()
+        if isinstance(node, (GroupBy, ModelTransforms)):
+            _recurse_into_sources(node.sources)
+        if isinstance(node, Join) and node.left:
+            _recurse_into_sources([node.left])
 
-    merge_team_execution_info(metadata, team_dict, team)
+    _propagate_namespace(obj)
 
 
 def merge_team_execution_info(metadata: MetaData, team_dict: Dict[str, Team], team_name: str):
@@ -230,11 +249,11 @@ def _merge_mode_maps(
 
     filtered_mode_maps = [m for m in mode_maps if m]
 
-    # Initialize the result with the first mode map
-    result = None
+    if not filtered_mode_maps:
+        return None
 
-    if len(filtered_mode_maps) >= 1:
-        result = push_common_to_modes(filtered_mode_maps[0], env_or_config_attribute)
+    # Initialize the result with the first mode map
+    result = push_common_to_modes(filtered_mode_maps[0], env_or_config_attribute)
 
     # Merge each new mode map into the result
     for m in filtered_mode_maps[1:]:

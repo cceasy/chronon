@@ -1,6 +1,6 @@
 from joins.azure import demo
 
-from ai.chronon.staging_query import StagingQuery, TableDependency
+from ai.chronon.types import StagingQuery, TableDependency
 
 # For modular join backfills
 v1 = StagingQuery(

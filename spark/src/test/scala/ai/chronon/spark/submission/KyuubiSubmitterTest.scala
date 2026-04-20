@@ -201,7 +201,7 @@ class KyuubiSubmitterTest extends AnyFlatSpec with MockitoSugar {
 
   it should "generate correct job name" in {
     val name = KyuubiUtils.generateJobName("test.groupby.v1", SparkJob)
-    assert(name.startsWith("spark-test_groupby_v1-"))
+    assert(name == "spark-test_groupby_v1")
   }
 
   it should "convert JobType to batch type correctly" in {

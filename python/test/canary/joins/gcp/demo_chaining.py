@@ -2,9 +2,7 @@ from group_bys.gcp import user_activities_chained
 from joins.gcp import demo_parent
 from staging_queries.gcp import exports
 
-from ai.chronon.join import Derivation, Join, JoinPart
-from ai.chronon.query import Query, selects
-from ai.chronon.source import EventSource
+from ai.chronon.types import Derivation, EventSource, Join, JoinPart, Query, selects
 
 """
 Final Join in a chaining scenario that uses as its left source the
@@ -20,5 +18,4 @@ downstream_join = Join(
     ],
     version=0,
     online=True,
-    output_namespace="data",
 )

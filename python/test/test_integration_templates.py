@@ -7,21 +7,36 @@ from click.testing import CliRunner
 
 from integration.helpers.cli import compile_configs
 from integration.helpers.templates import (
-    AWS_CONFIGS,
-    AZURE_CONFIGS,
-    GCP_CONFIGS,
     _apply_renames,
+    _discover_sources,
     _find_imported_stems,
     cleanup_test_configs,
     generate_test_configs,
-    get_confs,
+    resolve_conf,
 )
 
 _canary_root = os.path.join(os.path.dirname(__file__), "canary")
 
 
+class TestConfResolver:
+    """Test the resolve_conf helper."""
+
+    def test_resolve_conf_with_version(self):
+        assert resolve_conf("compiled/joins/gcp/demo.v1__1", "abc") == "compiled/joins/gcp/demo_abc.v1__1"
+
+    def test_resolve_conf_without_version(self):
+        assert resolve_conf("compiled/joins/azure/demo.v2", "abc") == "compiled/joins/azure/demo_abc.v2"
+
+    def test_resolve_conf_no_dot(self):
+        assert resolve_conf("compiled/joins/gcp/demo", "abc") == "compiled/joins/gcp/demo_abc"
+
+    def test_resolve_staging_query(self):
+        assert resolve_conf("compiled/staging_queries/aws/exports.dim_listings__0", "abc") == \
+            "compiled/staging_queries/aws/exports_abc.dim_listings__0"
+
+
 class TestCompiledConfsExist:
-    """Generate templates, compile, and verify all confs declared in ConfigTemplate are produced."""
+    """Generate templates, compile, and verify test-scoped confs are produced."""
 
     @pytest.fixture(autouse=True)
     def _setup_env(self, monkeypatch):
@@ -41,16 +56,12 @@ class TestCompiledConfsExist:
 
     def _compile_and_check(self, cloud):
         tid = "ctest"
-        confs = get_confs(cloud, tid)
-        assert confs, f"No confs declared for {cloud} in ConfigTemplate.confs"
         try:
             generate_test_configs(tid, _canary_root, cloud=cloud)
             runner = CliRunner()
             compile_configs(runner, _canary_root, clean=False)
 
             compiled_dir = os.path.join(_canary_root, "compiled")
-            # Collect all compiled files that contain the test_id so we can
-            # show the developer what was actually produced.
             actually_produced = []
             for root, _, files in os.walk(compiled_dir):
                 for f in files:
@@ -59,25 +70,10 @@ class TestCompiledConfsExist:
                             os.path.relpath(os.path.join(root, f), _canary_root)
                         )
 
-            for base_conf, resolved_conf in sorted(confs.items()):
-                path = os.path.join(_canary_root, resolved_conf)
-                assert os.path.exists(path), (
-                    f"\n"
-                    f"Compiled conf not produced: {resolved_conf}\n"
-                    f"  Expected because '{base_conf}' is declared in a\n"
-                    f"  ConfigTemplate.confs list in integration/helpers/templates.py.\n"
-                    f"\n"
-                    f"  This usually means the source .py file was modified (e.g. a\n"
-                    f"  variable was renamed or its version was bumped) but the confs\n"
-                    f"  list was not updated to match.\n"
-                    f"\n"
-                    f"  To fix: open integration/helpers/templates.py, find the\n"
-                    f"  ConfigTemplate whose source produces this conf, and update\n"
-                    f"  its confs list to match the new compiled output.\n"
-                    f"\n"
-                    f"  Compiled confs actually produced for test_id='{tid}':\n"
-                    + "\n".join(f"    - {p}" for p in sorted(actually_produced))
-                )
+            assert actually_produced, (
+                f"No compiled confs produced for cloud={cloud} with test_id={tid}. "
+                f"Check that _discover_sources finds .py files under the canary config dirs."
+            )
         finally:
             cleanup_test_configs(tid, _canary_root, cloud=cloud)
             self._cleanup_compiled(tid)
@@ -92,57 +88,30 @@ class TestCompiledConfsExist:
         self._compile_and_check("azure")
 
 
-class TestConfigSourcesExist:
-    """Ensure every ConfigTemplate.source points to a real file in the canary dir."""
+class TestDiscoverSources:
+    """Verify _discover_sources finds config files for each cloud."""
 
-    _SOURCE_MISSING_MSG = (
-        "\n"
-        "Source file missing: {source}\n"
-        "  Expected at: {path}\n"
-        "\n"
-        "  This file is referenced by a ConfigTemplate in\n"
-        "  integration/helpers/templates.py ({cloud}_CONFIGS).\n"
-        "  Integration tests depend on this file to generate\n"
-        "  test-isolated configs.\n"
-        "\n"
-        "  To fix: either restore the source file, or remove\n"
-        "  the ConfigTemplate entry from {cloud}_CONFIGS in\n"
-        "  integration/helpers/templates.py (and remove any\n"
-        "  integration tests that reference its confs).\n"
-    )
+    def test_gcp_has_sources(self):
+        sources = _discover_sources(_canary_root, "gcp")
+        stems = {os.path.basename(s) for s in sources}
+        assert "exports.py" in stems
+        assert "dim_listings.py" in stems
+        assert "demo.py" in stems
+        assert "__init__.py" not in stems
 
-    @pytest.mark.parametrize(
-        "cfg",
-        GCP_CONFIGS,
-        ids=[c.source for c in GCP_CONFIGS],
-    )
-    def test_gcp_source_exists(self, cfg):
-        path = os.path.join(_canary_root, cfg.source)
-        assert os.path.isfile(path), self._SOURCE_MISSING_MSG.format(
-            source=cfg.source, path=path, cloud="GCP",
-        )
+    def test_aws_has_sources(self):
+        sources = _discover_sources(_canary_root, "aws")
+        stems = {os.path.basename(s) for s in sources}
+        assert "exports.py" in stems
+        assert "dim_listings.py" in stems
+        assert "demo.py" in stems
 
-    @pytest.mark.parametrize(
-        "cfg",
-        AWS_CONFIGS,
-        ids=[c.source for c in AWS_CONFIGS],
-    )
-    def test_aws_source_exists(self, cfg):
-        path = os.path.join(_canary_root, cfg.source)
-        assert os.path.isfile(path), self._SOURCE_MISSING_MSG.format(
-            source=cfg.source, path=path, cloud="AWS",
-        )
-
-    @pytest.mark.parametrize(
-        "cfg",
-        AZURE_CONFIGS,
-        ids=[c.source for c in AZURE_CONFIGS],
-    )
-    def test_azure_source_exists(self, cfg):
-        path = os.path.join(_canary_root, cfg.source)
-        assert os.path.isfile(path), self._SOURCE_MISSING_MSG.format(
-            source=cfg.source, path=path, cloud="AZURE",
-        )
+    def test_azure_has_sources(self):
+        sources = _discover_sources(_canary_root, "azure")
+        stems = {os.path.basename(s) for s in sources}
+        assert "exports.py" in stems
+        assert "dim_listings.py" in stems
+        assert "demo.py" in stems
 
 
 class TestRewriteImports:
@@ -229,7 +198,7 @@ class TestRewriteImports:
 
 class TestGenerateAndCleanup:
     def test_round_trip(self, tmp_path):
-        """generate_test_configs renames files in-place, cleanup restores them."""
+        """generate_test_configs copies files, cleanup deletes the copies."""
         # Set up a minimal canary structure
         sq_dir = tmp_path / "staging_queries" / "gcp"
         sq_dir.mkdir(parents=True)
@@ -256,34 +225,34 @@ class TestGenerateAndCleanup:
         generated = generate_test_configs(tid, str(tmp_path), cloud="gcp")
         assert len(generated) == 8
 
-        # Original files should exist
+        # Original files should still exist (untouched)
         assert (sq_dir / "exports.py").exists()
         assert (gb_dir / "purchases.py").exists()
 
-        # Renamed files should exist
+        # Copies should exist
         assert (sq_dir / f"exports_{tid}.py").exists()
         assert (gb_dir / f"purchases_{tid}.py").exists()
 
-        # Verify import renames propagated into file contents
+        # Verify import renames propagated into copies
         gb_content = (gb_dir / f"purchases_{tid}.py").read_text()
         assert f"purchases_import_{tid}" in gb_content
 
         join_content = (join_dir / f"training_set_{tid}.py").read_text()
         assert f"purchases_{tid}" in join_content
 
-        # Cleanup should restore originals
-        restored = cleanup_test_configs(tid, str(tmp_path), cloud="gcp")
-        assert len(restored) == 8
+        # Originals should NOT be modified
+        gb_orig = (gb_dir / "purchases.py").read_text()
+        assert f"purchases_import_{tid}" not in gb_orig
+        assert "purchases_import" in gb_orig
 
-        # Original files should be back
+        # Cleanup should delete copies
+        deleted = cleanup_test_configs(tid, str(tmp_path), cloud="gcp")
+        assert len(deleted) == 8
+
+        # Original files should still exist
         assert (sq_dir / "exports.py").exists()
         assert (gb_dir / "purchases.py").exists()
 
-        # Renamed files should be gone
+        # Copies should be gone
         assert not (sq_dir / f"exports_{tid}.py").exists()
         assert not (gb_dir / f"purchases_{tid}.py").exists()
-
-        # Import references should be reverted
-        gb_content = (gb_dir / "purchases.py").read_text()
-        assert "purchases_import" in gb_content
-        assert f"purchases_import_{tid}" not in gb_content

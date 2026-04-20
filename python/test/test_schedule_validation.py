@@ -3,7 +3,7 @@ Tests for schedule validation functionality.
 """
 
 import pytest
-from ai.chronon.schedule_validation import validate_at_most_daily_schedule
+from ai.chronon.repo.hub_runner import _validate_at_most_daily_schedule as validate_at_most_daily_schedule
 
 
 class TestScheduleValidation:

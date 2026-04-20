@@ -2,12 +2,19 @@ package ai.chronon.integrations.cloud_gcp
 import ai.chronon.api.Builders.MetaData
 import ai.chronon.api.JobStatusType
 import ai.chronon.spark.submission.JobSubmitterConstants._
-import ai.chronon.spark.submission.{JobSubmitter, JobType, FlinkJob => TypeFlinkJob, SparkJob => TypeSparkJob}
+import ai.chronon.spark.submission.{
+  JobSubmitter,
+  JobType,
+  StorageClient,
+  FlinkJob => TypeFlinkJob,
+  SparkJob => TypeSparkJob
+}
 import com.google.api.gax.rpc.ApiException
 import com.google.cloud.dataproc.v1._
 import com.google.cloud.storage.{Storage, StorageOptions}
 import com.google.protobuf.util.JsonFormat
 
+import java.time.{Duration, Instant}
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters._
 import scala.util.matching.Regex
@@ -25,7 +32,8 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
                         bigtableInstanceId: String = "",
                         override val tablePartitionsDataset: String = "",
                         override val dqMetricsDataset: String = "",
-                        flinkHealthCheckFn: Option[String] => Boolean = _ => true)
+                        flinkHealthCheckFn: Option[String] => Boolean = _ => true,
+                        flinkInternalJobIdFetchFn: Option[String] => Option[String] = _ => None)
     extends JobSubmitter {
 
   def listRunningGroupByFlinkJobs(groupByName: String): List[String] = {
@@ -76,27 +84,20 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
       .map(_.split("=")(1))
       .getOrElse(throw new RuntimeException("Flink job id not found in manifest file."))
 
-    val flinkJobIdCheckpointPath = s"$flinkCheckpointUri/$flinkJobId"
-    val matchedFiles = gcsClient.listFiles(flinkJobIdCheckpointPath).toList
-    val allCheckpoints = matchedFiles
+    // flinkCheckpointUri is already the checkpoints base path (e.g. gs://bucket/flink-state/checkpoints).
+    // List directly under it rather than going through StorageClient.resolveLatestCheckpointPath which
+    // appends /checkpoints/ and uses a different path convention.
+    val jobCheckpointPath = s"$flinkCheckpointUri/$flinkJobId"
+    val latestCheckpoint = gcsClient
+      .listFiles(jobCheckpointPath)
       .filter(_.split("/").exists(_.startsWith("chk-")))
       .map(_.split("/").find(_.startsWith("chk-")).get)
+      .toList
       .distinct
-      .sortBy(chk => chk.substring(4).toInt)(Ordering.Int.reverse)
-    logger.info(s"Flink checkpoints for $groupByName: $allCheckpoints")
-
-    val latestCheckpoint = allCheckpoints.headOption
-    val latestCheckpointUri = latestCheckpoint
-      .map(chk => {
-        s"$flinkJobIdCheckpointPath/$chk"
-      })
-
-    if (latestCheckpointUri.isEmpty) {
-      logger.info(s"No checkpoints found for $groupByName.")
-    } else {
-      logger.info(s"Latest checkpoint for $groupByName: ${latestCheckpointUri.get}")
-    }
-
+      .sortBy(_.substring(4).toInt)(Ordering.Int.reverse)
+      .headOption
+    val latestCheckpointUri = latestCheckpoint.map(chk => s"$jobCheckpointPath/$chk")
+    logger.info(s"Latest checkpoint for $groupByName: $latestCheckpointUri")
     latestCheckpointUri
   }
 
@@ -113,8 +114,21 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
         case JobStatus.State.ERROR                                         => JobStatusType.FAILED
         case JobStatus.State.DONE                                          => JobStatusType.SUCCEEDED
         case JobStatus.State.RUNNING if isFlinkJob && isRunningAndHealthy  => JobStatusType.RUNNING
-        case JobStatus.State.RUNNING if isFlinkJob && !isRunningAndHealthy => JobStatusType.PENDING
-        case JobStatus.State.RUNNING | JobStatus.State.SETUP_DONE          => JobStatusType.RUNNING
+        case JobStatus.State.RUNNING if isFlinkJob && !isRunningAndHealthy =>
+          // Health check failed. Derive submission time from the already-fetched job object
+          // (no extra RPC) and delegate grace period logic to the shared utility.
+          // Filter out entries whose stateStartTime is unset (epoch 0) to avoid treating
+          // the proto default as a real submission time, which would make withinGrace always false.
+          val submissionTime = job.getStatusHistoryList.asScala
+            .find(s => s.hasStateStartTime && s.getStateStartTime.getSeconds > 0)
+            .map(s => Instant.ofEpochSecond(s.getStateStartTime.getSeconds))
+          JobSubmitter.flinkStatusWithGrace(
+            jobId,
+            submissionTime,
+            DataprocSubmitter.FlinkHealthCheckGracePeriod,
+            logger
+          )
+        case JobStatus.State.RUNNING | JobStatus.State.SETUP_DONE => JobStatusType.RUNNING
         case JobStatus.State.CANCEL_STARTED | JobStatus.State.CANCEL_PENDING | JobStatus.State.CANCELLED =>
           JobStatusType.FAILED
         case _ => JobStatusType.UNKNOWN
@@ -606,6 +620,20 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
     }
   }
 
+  override def getFlinkInternalJobId(jobId: String): Option[String] =
+    flinkInternalJobIdFetchFn(getFlinkUrl(jobId))
+
+  override def getLatestCheckpointPath(flinkInternalJobId: String, flinkStateUri: String): Option[String] = {
+    val result = StorageClient.resolveLatestCheckpointPath(gcsClient, flinkInternalJobId, flinkStateUri)
+    result match {
+      case Some(path) => logger.info(s"Resolved latest checkpoint for Flink job $flinkInternalJobId: $path")
+      case None =>
+        logger.warn(
+          s"No checkpoints found for Flink job $flinkInternalJobId at $flinkStateUri/checkpoints/$flinkInternalJobId")
+    }
+    result
+  }
+
   override def deprecatedClusterNameEnvVars: Seq[String] = Seq(GcpDataprocClusterNameEnvVar)
 
   override def ensureClusterReady(clusterName: String, clusterConf: Option[Map[String, String]])(implicit
@@ -693,6 +721,11 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
 }
 
 object DataprocSubmitter {
+
+  // Grace period from job submission before an unhealthy RUNNING Flink job is marked FAILED.
+  // Dataproc goes straight to RUNNING (no K8s operator layer), so this window covers full
+  // startup including YARN app initialisation and checkpoint accumulation.
+  val FlinkHealthCheckGracePeriod: Duration = Duration.ofMinutes(15)
 
   def apply(jobControllerClient: JobControllerClient,
             storageClient: Storage,

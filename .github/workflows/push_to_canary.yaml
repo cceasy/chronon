@@ -20,42 +20,284 @@ jobs:
     uses: ./.github/workflows/reusable_build_and_push.yaml
     secrets: inherit
 
-  integration_tests:
-    needs: build_and_push
-    uses: ./.github/workflows/reusable_integration_tests.yaml
-    with:
-      version: ${{ needs.build_and_push.outputs.version }}
-    secrets: inherit
-
-  push_to_azure:
+  canary_compile_check:
     needs: build_and_push
     runs-on: ubuntu-latest
-    environment: main
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Configure Git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Compile canary configs against previous baseline
+        shell: bash
+        run: |
+          # Build the mill venv (installs deps + generates thrift sources)
+          ./mill python.pythonExe
+          ./mill python.generatedSources
+          VENV_PYTHON="$(pwd)/out/python/pythonExe.dest/venv/bin/python3"
+
+          export PYTHONHASHSEED=0
+          export PYTHONPATH="$(pwd)/python/src:$(pwd)/out/python/generatedSources.dest:$(pwd)/python/test/canary"
+
+          # Replace compiled files with the previous commit's versions so the
+          # compiler's built-in online-config-change detection runs against the
+          # last known good baseline — not the potentially force-compiled files
+          # checked into this commit.
+          git checkout HEAD~1 -- python/test/canary/compiled/ 2>/dev/null || true
+
+          cd python/test/canary
+          $VENV_PYTHON -m ai.chronon.repo.zipline compile
+
+  run_aws_integration_tests:
+    needs: [build_and_push, canary_compile_check]
+    runs-on: ubuntu-latest
+    environment: aws
+
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     permissions:
       id-token: write
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - name: Azure Login
-        uses: azure/login@v2
+      - name: Configure AWS Credentials for Canary Project
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          role-to-assume: arn:aws:iam::${{secrets.AWS_ACCOUNT_ID}}:role/github_actions
+          aws-region: ${{secrets.AWS_REGION}}
 
-      - name: Download Python Wheel
-        uses: actions/download-artifact@v4
-        with:
-          name: zipline-ai-wheel
+      - name: Run Integration Tests
+        shell: bash
+        env:
+          CLOUD: aws
+          VERSION: ${{ needs.build_and_push.outputs.version }}
+          PYTEST_ADDOPTS: "-x -k test_run_quickstart"
+          EMR_EXECUTION_ROLE_ARN: arn:aws:iam::${{secrets.AWS_ACCOUNT_ID}}:role/zipline_canary_emr_serverless_role
+          EMR_LOG_URI: s3://zipline-logs-canary/emr/
+          EMR_CLOUDWATCH_LOG_GROUP: /emr/zipline-canary
+        run: |
+          set -xo pipefail
+          ./mill python.test_integration 2>&1 | tee /tmp/test-output.log
 
-      - name: Download Flink Assembly Jar
-        uses: actions/download-artifact@v4
+      - name: Collect commit context
+        id: context
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+            --jq '.[0] | "\(.html_url)\t\(.number)\t\(.user.login)\t\(.title)"' > /tmp/pr_info.txt 2>/dev/null || true
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}" \
+            --jq '.author.login // .commit.author.name' > /tmp/author.txt 2>/dev/null || true
+          LAST_PASSING=$(gh api "repos/${{ github.repository }}/actions/workflows/push_to_canary.yaml/runs?branch=main&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha' 2>/dev/null || true)
+          if [ -n "$LAST_PASSING" ]; then
+            gh api "repos/${{ github.repository }}/compare/${LAST_PASSING}...${{ github.sha }}" \
+              --jq '.commits[] | "• <\(.html_url)|`\(.sha[0:8])`> \(.commit.message | split("\n")[0]) (@\(.author.login // .commit.author.name))"' \
+              > /tmp/suspect_commits.txt 2>/dev/null || true
+          fi
+
+      - name: On Fail Notify Slack
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_AWS_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          python3 << 'PYEOF' > /tmp/slack_payload.json
+          import json, os, re
+          run_url = os.environ['RUN_URL']
+          sha = os.environ['COMMIT_SHA']
+          branch = os.environ['BRANCH']
+          author = ''
+          try: author = open('/tmp/author.txt').read().strip()
+          except Exception: pass
+          pr_url = pr_title = pr_number = ''
+          try:
+              parts = open('/tmp/pr_info.txt').read().strip().split('\t')
+              if len(parts) >= 4: pr_url, pr_number, pr_author, pr_title = parts[0], parts[1], parts[2], parts[3]
+          except Exception: pass
+          suspect_commits = ''
+          try: suspect_commits = open('/tmp/suspect_commits.txt').read().strip()
+          except Exception: pass
+          header = f':x: *Chronon AWS Integration Tests Failed*\n\nCommit: <{run_url}|`{sha[:8]}`>'
+          if author: header += f' by @{author}'
+          if pr_url: header += f'\nPR: <{pr_url}|#{pr_number}> {pr_title}'
+          header += f'\nBranch: `{branch}`'
+          blocks = [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': header}}]
+          if suspect_commits:
+              ct = f'*Commits since last passing run:*\n{suspect_commits}'
+              if len(ct) > 2900: ct = ct[:2900] + '\n...(truncated)'
+              blocks.append({'type': 'section', 'text': {'type': 'mrkdwn', 'text': ct}})
+          log_tail = ''
+          try:
+              with open('/tmp/test-output.log') as f: lines = f.readlines()
+              cleaned = [re.sub(r'\x1b\[[0-9;]*m', '', l.rstrip()) for l in lines]
+              log_tail = '\n'.join(cleaned[-30:])
+          except Exception: pass
+          if log_tail:
+              lt = f'```\n{log_tail}\n```'
+              if len(lt) > 2900: lt = f'```\n...{log_tail[-2880:]}\n```'
+              blocks.append({'type': 'section', 'text': {'type': 'mrkdwn', 'text': lt}})
+          blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': f'<{run_url}|View full logs>'}]})
+          print(json.dumps({'text': 'Chronon AWS Integration Tests Failed', 'blocks': blocks}))
+          PYEOF
+          curl -X POST -H 'Content-type: application/json' --data @/tmp/slack_payload.json "$SLACK_WEBHOOK_URL"
+
+  run_gcp_integration_tests:
+    needs: [build_and_push, canary_compile_check]
+    runs-on: ubuntu-latest
+    environment: gcp
+
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Configure GCP Credentials for Canary Project
+        uses: google-github-actions/auth@v2
         with:
-          name: flink-assembly-jar
-          path: flink-assembly-jar
+          project_id: ${{secrets.GCP_CANARY_PROJECT_ID}}
+          workload_identity_provider: projects/${{secrets.GCP_CANARY_PROJECT_NUMBER}}/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-actions@${{secrets.GCP_CANARY_PROJECT_ID}}.iam.gserviceaccount.com
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Run Integration Tests
+        shell: bash
+        env:
+          CLOUD: gcp
+          VERSION: ${{ needs.build_and_push.outputs.version }}
+          PYTEST_ADDOPTS: "-x -k test_run_quickstart"
+        run: |
+          set -xo pipefail
+          ./mill python.test_integration 2>&1 | tee /tmp/test-output.log
+
+      - name: Collect commit context
+        id: context
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+            --jq '.[0] | "\(.html_url)\t\(.number)\t\(.user.login)\t\(.title)"' > /tmp/pr_info.txt 2>/dev/null || true
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}" \
+            --jq '.author.login // .commit.author.name' > /tmp/author.txt 2>/dev/null || true
+          LAST_PASSING=$(gh api "repos/${{ github.repository }}/actions/workflows/push_to_canary.yaml/runs?branch=main&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha' 2>/dev/null || true)
+          if [ -n "$LAST_PASSING" ]; then
+            gh api "repos/${{ github.repository }}/compare/${LAST_PASSING}...${{ github.sha }}" \
+              --jq '.commits[] | "• <\(.html_url)|`\(.sha[0:8])`> \(.commit.message | split("\n")[0]) (@\(.author.login // .commit.author.name))"' \
+              > /tmp/suspect_commits.txt 2>/dev/null || true
+          fi
+
+      - name: On Fail Notify Slack
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_GCP_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          python3 << 'PYEOF' > /tmp/slack_payload.json
+          import json, os, re
+          run_url = os.environ['RUN_URL']
+          sha = os.environ['COMMIT_SHA']
+          branch = os.environ['BRANCH']
+          author = ''
+          try: author = open('/tmp/author.txt').read().strip()
+          except Exception: pass
+          pr_url = pr_title = pr_number = ''
+          try:
+              parts = open('/tmp/pr_info.txt').read().strip().split('\t')
+              if len(parts) >= 4: pr_url, pr_number, pr_author, pr_title = parts[0], parts[1], parts[2], parts[3]
+          except Exception: pass
+          suspect_commits = ''
+          try: suspect_commits = open('/tmp/suspect_commits.txt').read().strip()
+          except Exception: pass
+          header = f':x: *Chronon GCP Integration Tests Failed*\n\nCommit: <{run_url}|`{sha[:8]}`>'
+          if author: header += f' by @{author}'
+          if pr_url: header += f'\nPR: <{pr_url}|#{pr_number}> {pr_title}'
+          header += f'\nBranch: `{branch}`'
+          blocks = [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': header}}]
+          if suspect_commits:
+              ct = f'*Commits since last passing run:*\n{suspect_commits}'
+              if len(ct) > 2900: ct = ct[:2900] + '\n...(truncated)'
+              blocks.append({'type': 'section', 'text': {'type': 'mrkdwn', 'text': ct}})
+          log_tail = ''
+          try:
+              with open('/tmp/test-output.log') as f: lines = f.readlines()
+              cleaned = [re.sub(r'\x1b\[[0-9;]*m', '', l.rstrip()) for l in lines]
+              log_tail = '\n'.join(cleaned[-30:])
+          except Exception: pass
+          if log_tail:
+              lt = f'```\n{log_tail}\n```'
+              if len(lt) > 2900: lt = f'```\n...{log_tail[-2880:]}\n```'
+              blocks.append({'type': 'section', 'text': {'type': 'mrkdwn', 'text': lt}})
+          blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': f'<{run_url}|View full logs>'}]})
+          print(json.dumps({'text': 'Chronon GCP Integration Tests Failed', 'blocks': blocks}))
+          PYEOF
+          curl -X POST -H 'Content-type: application/json' --data @/tmp/slack_payload.json "$SLACK_WEBHOOK_URL"
+
+  run_fetcher_integration_tests:
+    needs: [build_and_push, canary_compile_check]
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: 11
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure GCP Credentials for Canary Project
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{secrets.GCP_CANARY_PROJECT_ID}}
+          workload_identity_provider: projects/${{secrets.GCP_CANARY_PROJECT_NUMBER}}/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-actions@${{secrets.GCP_CANARY_PROJECT_ID}}.iam.gserviceaccount.com
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
       - name: Download Service Assembly Jar
         uses: actions/download-artifact@v4
@@ -63,64 +305,97 @@ jobs:
           name: service-assembly-jar
           path: service-assembly-jar
 
+      - name: Download Cloud GCP Lib Jar
+        uses: actions/download-artifact@v4
+        with:
+          name: cloud-gcp-jar
+          path: cloud-gcp-jar
+
+      - name: Download Cloud AWS Lib Jar
+        uses: actions/download-artifact@v4
+        with:
+          name: cloud-aws-jar
+          path: cloud-aws-jar
+
       - name: Download Cloud Azure Lib Jar
         uses: actions/download-artifact@v4
         with:
           name: cloud-azure-jar
           path: cloud-azure-jar
 
-      - name: Rename JAR files to expected names
-        run: |
-          mv cloud-azure-jar/out.jar cloud_azure_lib_deploy.jar
-          mv flink-assembly-jar/out.jar flink_assembly_deploy.jar
-          mv service-assembly-jar/out.jar service_assembly_deploy.jar
-
-      - name: Push Jars to Azure Blob Storage
+      - name: Copy the jars to expected paths and build
         shell: bash
         run: |
-          set -eo pipefail
-          VERSION="${{ needs.build_and_push.outputs.version }}"
-          ACCOUNT="ziplineai2"
-          CONTAINER="dev-zipline-artifacts"
+          mkdir build_output
+          cp cloud-gcp-jar/out.jar build_output/cloud_gcp_lib_deploy.jar
+          cp cloud-aws-jar/out.jar build_output/cloud_aws_lib_deploy.jar
+          cp cloud-azure-jar/out.jar build_output/cloud_azure_lib_deploy.jar
+          cp service-assembly-jar/out.jar build_output/service_assembly_deploy.jar
+          docker buildx build \
+          -f docker/fetcher/Dockerfile \
+          -t ziplineai/chronon-fetcher:$(git rev-parse --short HEAD) \
+          -t ziplineai/chronon-fetcher:latest \
+          --load \
+          .
 
-          az storage blob upload \
-            --account-name $ACCOUNT \
-            --auth-mode login \
-            --container-name $CONTAINER \
-            --file cloud_azure_lib_deploy.jar \
-            --name release/${{ needs.build_and_push.outputs.version }}/jars/cloud_azure_lib_deploy.jar \
-            --tier cool \
-            --overwrite
+      - name: Run docker detached
+        shell: bash
+        run: |
+          GCP_PROJECT_ID=canary-443022 GCP_BIGTABLE_INSTANCE_ID=zipline-canary-instance docker compose -f docker/fetcher/chronon-service-with-local-telemetry.yml up -d
+          docker ps -a
 
-          az storage blob upload \
-            --account-name $ACCOUNT \
-            --auth-mode login \
-            --container-name $CONTAINER \
-            --file flink_assembly_deploy.jar \
-            --name release/${{ needs.build_and_push.outputs.version }}/jars/flink_assembly_deploy.jar \
-            --tier cool \
-            --overwrite
+      - name: Wait for fetcher to be healthy
+        shell: bash
+        run: |
+          echo "Waiting for fetcher container to be healthy..."
+          for i in $(seq 1 30); do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' chronon-service-chronon-fetcher-1 2>/dev/null || echo "not_found")
+            echo "  Attempt $i/30: status=$STATUS"
+            if [ "$STATUS" = "healthy" ]; then
+              echo "Fetcher is healthy"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "Fetcher did not become healthy in time"
+              docker logs chronon-service-chronon-fetcher-1
+              exit 1
+            fi
+            sleep 6
+          done
 
-          az storage blob upload \
-            --account-name $ACCOUNT \
-            --auth-mode login \
-            --container-name $CONTAINER \
-            --file service_assembly_deploy.jar \
-            --name release/${{ needs.build_and_push.outputs.version }}/jars/service_assembly_deploy.jar \
-            --tier cool \
-            --overwrite
+      - name: Setup python
+        shell: bash
+        run: |
+          pip3 install -r scripts/fetcher_tests/requirements.txt
 
-          az storage blob upload \
-            --account-name $ACCOUNT \
-            --auth-mode login \
-            --container-name $CONTAINER \
-            --file ${{ needs.build_and_push.outputs.wheel_name }} \
-            --name release/${{ needs.build_and_push.outputs.version }}/wheels/${{ needs.build_and_push.outputs.wheel_name }} \
-            --tier cool \
-            --overwrite
+      - name: Run json string tests
+        shell: bash
+        run: |
+          docker ps -a
+          TEST_FAILED=false
+          python3 scripts/fetcher_tests/json_string_test.py || TEST_FAILED=true
+          if [ "$TEST_FAILED" = "true" ]; then
+            echo "JSON string tests failed"
+            docker logs chronon-service-chronon-fetcher-1
+            exit 1
+          fi
+
+      - name: Run fetcher integration tests
+        shell: bash
+        run: |
+          docker ps -a
+          TEST_FAILED=false
+          python3 scripts/fetcher_tests/avro_encoded_string_test.py || TEST_FAILED=true
+          if [ "$TEST_FAILED" = "true" ]; then
+            echo "Avro encoded string tests failed"
+            docker logs chronon-service-chronon-fetcher-1
+            exit 1
+          fi
+
+  # Azure push is now handled by reusable_build_and_push.yaml (inside build_and_push)
 
   build_and_push_fetcher_image:
-    needs: [build_and_push, integration_tests]
+    needs: [build_and_push, run_aws_integration_tests, run_gcp_integration_tests, run_fetcher_integration_tests]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
 
@@ -180,7 +455,7 @@ jobs:
             ziplineai/chronon-fetcher:nightly
 
   push_to_aws_passing:
-    needs: [build_and_push, integration_tests]
+    needs: [build_and_push, run_aws_integration_tests, run_gcp_integration_tests, run_fetcher_integration_tests]
     runs-on: ubuntu-latest
 
     permissions:
@@ -241,7 +516,7 @@ jobs:
           aws s3 cp connectors_kinesis_deploy.jar s3://zipline-artifacts-canary/release/passing-candidate/jars/connectors_kinesis_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
 
       - name: Push Jars to s3 Bucket (latest)
-        if: ${{ needs.integration_tests.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        if: ${{ needs.run_aws_integration_tests.result == 'success' && needs.run_gcp_integration_tests.result == 'success' && needs.run_fetcher_integration_tests.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         shell: bash
         run: |
           set -eo pipefail
@@ -253,7 +528,7 @@ jobs:
 
 
   push_to_gcp_passing:
-    needs: [build_and_push, integration_tests]
+    needs: [build_and_push, run_aws_integration_tests, run_gcp_integration_tests, run_fetcher_integration_tests]
     runs-on: ubuntu-latest
 
     permissions:
@@ -329,7 +604,7 @@ jobs:
           gcloud storage objects update gs://zipline-artifacts-canary/release/passing-candidate/jars/connectors_pubsub_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
 
       - name: Push Jars to GCS Bucket (latest)
-        if: ${{ needs.integration_tests.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        if: ${{ needs.run_aws_integration_tests.result == 'success' && needs.run_gcp_integration_tests.result == 'success' && needs.run_fetcher_integration_tests.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         shell: bash
         run: |
           set -eo pipefail
@@ -350,7 +625,7 @@ jobs:
 
 
   push_to_azure_passing:
-    needs: [build_and_push, push_to_azure]
+    needs: [build_and_push, run_aws_integration_tests, run_gcp_integration_tests, run_fetcher_integration_tests]
     runs-on: ubuntu-latest
     environment: main
 
@@ -498,8 +773,8 @@ jobs:
             kinesis-jar
 
   merge_to_main-passing-tests:
-    needs: [integration_tests]
-    if: ${{ needs.integration_tests.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: [run_aws_integration_tests, run_gcp_integration_tests, run_fetcher_integration_tests]
+    if: ${{ needs.run_aws_integration_tests.result == 'success' && needs.run_gcp_integration_tests.result == 'success' && needs.run_fetcher_integration_tests.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
 
     permissions:
@@ -539,16 +814,18 @@ jobs:
 
 
   on_fail_notify_slack:
-    needs: [integration_tests, merge_to_main-passing-tests]
+    needs: [canary_compile_check, run_aws_integration_tests, run_gcp_integration_tests, run_fetcher_integration_tests, merge_to_main-passing-tests]
     if: failure()
     runs-on: ubuntu-latest
 
     steps:
-      - name: Collect failed job logs
+      - name: Collect failed job logs and commit context
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p /tmp/failed-logs
+
+          # Collect failed job logs
           gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" \
             --jq '.jobs[] | select(.conclusion == "failure" and .name != "on_fail_notify_slack") | "\(.id) \(.name)"' | \
           while read -r JOB_ID JOB_NAME; do
@@ -559,9 +836,29 @@ jobs:
             --jq '[.jobs[] | select(.conclusion == "failure" and .name != "on_fail_notify_slack") | {id, name, steps: [.steps[] | select(.conclusion == "failure") | .name]}]' \
             > /tmp/failed-logs/metadata.json 2>/dev/null || echo "[]" > /tmp/failed-logs/metadata.json
 
+          # Get PR associated with this commit
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+            --jq '.[0] | "\(.html_url)\t\(.number)\t\(.user.login)\t\(.title)"' > /tmp/pr_info.txt 2>/dev/null || true
+
+          # Get commit author
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}" \
+            --jq '.author.login // .commit.author.name' > /tmp/author.txt 2>/dev/null || true
+
+          # Get commits since last successful run
+          LAST_PASSING=$(gh api "repos/${{ github.repository }}/actions/workflows/push_to_canary.yaml/runs?branch=main&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha' 2>/dev/null || true)
+          if [ -n "$LAST_PASSING" ]; then
+            gh api "repos/${{ github.repository }}/compare/${LAST_PASSING}...${{ github.sha }}" \
+              --jq '.commits[] | "• <\(.html_url)|`\(.sha[0:8])`> \(.commit.message | split("\n")[0]) (@\(.author.login // .commit.author.name))"' \
+              > /tmp/suspect_commits.txt 2>/dev/null || true
+          fi
+
       - name: Build notification payload
         env:
-          INTEGRATION_TESTS_RESULT: ${{ needs.integration_tests.result }}
+          COMPILE_CHECK_RESULT: ${{ needs.canary_compile_check.result }}
+          AWS_TESTS_RESULT: ${{ needs.run_aws_integration_tests.result }}
+          GCP_TESTS_RESULT: ${{ needs.run_gcp_integration_tests.result }}
+          FETCHER_TESTS_RESULT: ${{ needs.run_fetcher_integration_tests.result }}
           MERGE_RESULT: ${{ needs.merge_to_main-passing-tests.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT_SHA: ${{ github.sha }}
@@ -574,8 +871,32 @@ jobs:
           sha = os.environ['COMMIT_SHA']
           branch = os.environ['BRANCH']
 
+          # Read commit context
+          author = ''
+          try:
+              author = open('/tmp/author.txt').read().strip()
+          except Exception:
+              pass
+
+          pr_url = pr_title = pr_number = ''
+          try:
+              parts = open('/tmp/pr_info.txt').read().strip().split(' ', 3)
+              if len(parts) >= 4:
+                  pr_url, pr_number, pr_title = parts[0], parts[1], parts[3]
+          except Exception:
+              pass
+
+          suspect_commits = ''
+          try:
+              suspect_commits = open('/tmp/suspect_commits.txt').read().strip()
+          except Exception:
+              pass
+
           jobs = [
-              ('INTEGRATION_TESTS_RESULT', 'Integration Tests'),
+              ('COMPILE_CHECK_RESULT', 'Canary Compile Check'),
+              ('AWS_TESTS_RESULT', 'AWS Integration Tests'),
+              ('GCP_TESTS_RESULT', 'GCP Integration Tests'),
+              ('FETCHER_TESTS_RESULT', 'Fetcher Integration Tests'),
               ('MERGE_RESULT', 'Merge to main-passing-tests'),
           ]
 
@@ -592,31 +913,40 @@ jobs:
 
           failed_text = '\n'.join(f'• {f}' for f in failed) if failed else '• Unknown'
 
+          # Build header with author and PR info
+          header = f':x: *Chronon CI Pipeline Failed*\n\n'
+          header += f'Commit: <{run_url}|`{sha[:8]}`>'
+          if author:
+              header += f' by @{author}'
+          if pr_url:
+              header += f'\nPR: <{pr_url}|#{pr_number}> {pr_title}'
+          header += f'\nBranch: `{branch}`'
+
           blocks = [
               {
                   'type': 'section',
-                  'text': {
-                      'type': 'mrkdwn',
-                      'text': f':x: *Chronon CI Pipeline Failed*\n\nCommit: <{run_url}|{sha[:8]}>\nBranch: `{branch}`'
-                  }
+                  'text': {'type': 'mrkdwn', 'text': header}
               },
               {
                   'type': 'section',
-                  'text': {
-                      'type': 'mrkdwn',
-                      'text': f'*Failed Steps:*\n{failed_text}'
-                  }
+                  'text': {'type': 'mrkdwn', 'text': f'*Failed Steps:*\n{failed_text}'}
               },
           ]
+
+          if suspect_commits:
+              commits_text = f'*Commits since last passing run:*\n{suspect_commits}'
+              if len(commits_text) > 2900:
+                  commits_text = commits_text[:2900] + '\n...(truncated)'
+              blocks.append({
+                  'type': 'section',
+                  'text': {'type': 'mrkdwn', 'text': commits_text}
+              })
 
           if skipped:
               skipped_text = '\n'.join(f'• {s}' for s in skipped)
               blocks.append({
                   'type': 'section',
-                  'text': {
-                      'type': 'mrkdwn',
-                      'text': f'*Skipped (due to upstream failure):*\n{skipped_text}'
-                  }
+                  'text': {'type': 'mrkdwn', 'text': f'*Skipped (due to upstream failure):*\n{skipped_text}'}
               })
 
           # Add log excerpts from failed jobs
@@ -654,18 +984,12 @@ jobs:
 
               blocks.append({
                   'type': 'section',
-                  'text': {
-                      'type': 'mrkdwn',
-                      'text': log_text
-                  }
+                  'text': {'type': 'mrkdwn', 'text': log_text}
               })
 
           blocks.append({
               'type': 'context',
-              'elements': [{
-                  'type': 'mrkdwn',
-                  'text': f'<{run_url}|View full logs>'
-              }]
+              'elements': [{'type': 'mrkdwn', 'text': f'<{run_url}|View full logs>'}]
           })
 
           payload = {

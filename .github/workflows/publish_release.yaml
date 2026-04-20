@@ -95,9 +95,9 @@ jobs:
     outputs:
       wheel_file: ${{ steps.build-wheel.outputs.wheel_file }}
 
-  download_passing_candidate_jars:
+  download_passing_candidate_jars_gcp:
     runs-on: ubuntu-latest
-    environment: main
+    environment: gcp
     needs: [check_if_latest]
     permissions:
       contents: read
@@ -114,28 +114,59 @@ jobs:
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Download GCP JARs
+        run: |
+          mkdir -p gcp-jars
+          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/* gcp-jars/
+
+      - name: Upload GCP JARs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: passing-candidate-gcp-jars
+          path: gcp-jars/
+
+  download_passing_candidate_jars_aws:
+    runs-on: ubuntu-latest
+    environment: aws
+    needs: [check_if_latest]
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{secrets.AWS_ACCOUNT_ID}}:role/github_actions
           aws-region: ${{secrets.AWS_REGION}}
 
+      - name: Download AWS JARs
+        run: |
+          mkdir -p aws-jars
+          aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/ aws-jars/ --recursive
+
+      - name: Upload AWS JARs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: passing-candidate-aws-jars
+          path: aws-jars/
+
+
+  download_passing_candidate_jars_azure:
+    runs-on: ubuntu-latest
+    environment: azure
+    needs: [check_if_latest]
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
       - name: Azure Login
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Download GCP JARs
-        run: |
-          mkdir -p gcp-jars
-          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/* gcp-jars/
-
-      - name: Download AWS JARs
-        run: |
-          mkdir -p aws-jars
-          aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/ aws-jars/ --recursive
 
       - name: Download Azure JARs
         run: |
@@ -150,23 +181,12 @@ jobs:
           mv azure-jars/release/passing-candidate/jars/* azure-jars/
           rm -rf azure-jars/release
 
-      - name: Upload GCP JARs artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: passing-candidate-gcp-jars
-          path: gcp-jars/
-
-      - name: Upload AWS JARs artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: passing-candidate-aws-jars
-          path: aws-jars/
-
       - name: Upload Azure JARs artifact
         uses: actions/upload-artifact@v4
         with:
           name: passing-candidate-azure-jars
           path: azure-jars/
+
 
   publish_to_pypi:
     runs-on: ubuntu-latest
@@ -189,7 +209,8 @@ jobs:
 
   promote-gcp-candidate:
     runs-on: ubuntu-latest
-    needs: [check_if_latest, build_python_wheel, download_passing_candidate_jars]
+    needs: [check_if_latest, build_python_wheel, download_passing_candidate_jars_gcp]
+    environment: gcp
 
     permissions:
       id-token: write
@@ -249,7 +270,8 @@ jobs:
 
   promote-aws-candidate:
     runs-on: ubuntu-latest
-    needs: [check_if_latest, build_python_wheel, download_passing_candidate_jars]
+    needs: [check_if_latest, build_python_wheel, download_passing_candidate_jars_aws]
+    environment: aws
 
     permissions:
       id-token: write
@@ -300,8 +322,8 @@ jobs:
 
   promote-azure-candidate:
     runs-on: ubuntu-latest
-    needs: [check_if_latest, build_python_wheel, download_passing_candidate_jars]
-    environment: main
+    needs: [check_if_latest, build_python_wheel, download_passing_candidate_jars_azure]
+    environment: azure
 
     permissions:
       id-token: write
@@ -435,7 +457,7 @@ jobs:
 
   build_engine_images:
     runs-on: ubuntu-latest
-    needs: [check_if_latest, download_passing_candidate_jars]
+    needs: [check_if_latest, download_passing_candidate_jars_gcp, download_passing_candidate_jars_aws, download_passing_candidate_jars_azure]
     strategy:
       fail-fast: true
       matrix:
@@ -483,7 +505,7 @@ jobs:
   build_and_publish_docker:
     runs-on: ubuntu-latest
     environment: main
-    needs: [check_if_latest, download_passing_candidate_jars]
+    needs: [check_if_latest, download_passing_candidate_jars_gcp, download_passing_candidate_jars_aws, download_passing_candidate_jars_azure]
     permissions:
       contents: read
       packages: read

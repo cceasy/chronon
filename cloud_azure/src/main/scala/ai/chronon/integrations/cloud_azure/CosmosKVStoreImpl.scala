@@ -52,6 +52,7 @@ class CosmosKVStoreImpl(
 
   protected val containerToContext = new TrieMap[String, Metrics.Context]()
 
+  protected val enableTtl: Boolean = true
   private val dataTTLSeconds = conf.getOrElse(PropTTLSeconds, DefaultDataTTLSeconds.toString).toInt
   private val slowOperationThresholdMs = conf.getOrElse("cosmos.slow_operation_threshold_ms", "1000").toLong
 
@@ -155,7 +156,9 @@ class CosmosKVStoreImpl(
       }
 
       val containerProperties = new CosmosContainerProperties(containerName, partitionKeyDef)
-      containerProperties.setDefaultTimeToLiveInSeconds(dataTTLSeconds)
+      if (enableTtl) {
+        containerProperties.setDefaultTimeToLiveInSeconds(dataTTLSeconds)
+      }
 
       val throughputProps = props.get(PropThroughput) match {
         case Some(manualRU: Int) =>

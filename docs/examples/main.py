@@ -13,16 +13,15 @@
 #     limitations under the License.
 
 from ai.chronon import query
-from ai.chronon.group_by import GroupBy
-from gen_thrift.api.ttypes import (
-    EventSource,
-    EntitySource,
+from ai.chronon.types import (
     Aggregation,
-    Operation,
+    EntitySource,
+    EventSource,
+    GroupBy,
+    Join,
     JoinPart,
+    Operation,
 )
-
-from ai.chronon.join import Join
 
 ratings_features = GroupBy(
     sources=[

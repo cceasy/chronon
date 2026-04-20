@@ -49,7 +49,7 @@ Standardized approach across all REST/GraphQL integrations makes onboarding and 
 
 ```python
 from ai.chronon.api import RestExternalSource, RestEndpoint, AuthConfig, AuthType, MetaData
-from ai.chronon.api.ttypes import StructType, StructField, StringType, LongType, IntType, BooleanType, DoubleType
+from ai.chronon.types import StructType, StructField, StringType, LongType, IntType, BooleanType, DoubleType
 
 user_service = RestExternalSource(
     metadata=MetaData(name="user_service", team="fraud"),

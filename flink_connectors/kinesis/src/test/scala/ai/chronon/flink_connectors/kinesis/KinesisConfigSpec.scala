@@ -87,6 +87,12 @@ class KinesisConfigSpec extends AnyFlatSpec with Matchers {
     kinesisConfig.properties.containsKey(AWSConfigConstants.AWS_ENDPOINT) shouldBe false
     kinesisConfig.properties.containsKey(ConsumerConfigConstants.RECORD_PUBLISHER_TYPE) shouldBe false
     kinesisConfig.properties.containsKey(ConsumerConfigConstants.EFO_CONSUMER_NAME) shouldBe false
+    // polling consumer defaults
+    kinesisConfig.properties.getProperty(ConsumerConfigConstants.SHARD_GETRECORDS_RETRIES) shouldBe Defaults.GetRecordsRetries
+    kinesisConfig.properties.getProperty(ConsumerConfigConstants.SHARD_GETRECORDS_BACKOFF_BASE) shouldBe Defaults.GetRecordsBackoffBase
+    kinesisConfig.properties.getProperty(ConsumerConfigConstants.SHARD_GETRECORDS_BACKOFF_MAX) shouldBe Defaults.GetRecordsBackoffMax
+    kinesisConfig.properties.getProperty(ConsumerConfigConstants.SHARD_GETRECORDS_BACKOFF_EXPONENTIAL_CONSTANT) shouldBe Defaults.GetRecordsBackoffExponentialConstant
+    kinesisConfig.properties.getProperty(ConsumerConfigConstants.SHARD_GETRECORDS_INTERVAL_MILLIS) shouldBe Defaults.GetRecordsIntervalMillis
   }
 
   it should "apply overrides and optional fields from props and topic params" in {
@@ -114,6 +120,29 @@ class KinesisConfigSpec extends AnyFlatSpec with Matchers {
     kinesisConfig.properties.getProperty(AWSConfigConstants.AWS_ENDPOINT) shouldBe "http://localhost:4566"
     kinesisConfig.properties.getProperty(ConsumerConfigConstants.RECORD_PUBLISHER_TYPE) shouldBe ConsumerConfigConstants.RecordPublisherType.EFO.toString
     kinesisConfig.properties.getProperty(ConsumerConfigConstants.EFO_CONSUMER_NAME) shouldBe "consumer"
+    // EFO does not set polling-specific properties
+    kinesisConfig.properties.containsKey(ConsumerConfigConstants.SHARD_GETRECORDS_RETRIES) shouldBe false
+    kinesisConfig.properties.containsKey(ConsumerConfigConstants.SHARD_GETRECORDS_INTERVAL_MILLIS) shouldBe false
+  }
+
+  it should "allow per-stream override of getrecords retry and interval settings" in {
+    val props = Map(Keys.AwsRegion -> "us-east-1")
+    val topicParams = Map(
+      Keys.GetRecordsRetries -> "20",
+      Keys.GetRecordsBackoffBase -> "500",
+      Keys.GetRecordsBackoffMax -> "60000",
+      Keys.GetRecordsIntervalMillis -> "2000"
+    )
+    val topicInfo = TopicInfo("test-stream", "kinesis", topicParams)
+
+    val kinesisConfig = KinesisConfig.buildConsumerConfig(props, topicInfo)
+
+    kinesisConfig.properties.getProperty(ConsumerConfigConstants.SHARD_GETRECORDS_RETRIES) shouldBe "20"
+    kinesisConfig.properties.getProperty(ConsumerConfigConstants.SHARD_GETRECORDS_BACKOFF_BASE) shouldBe "500"
+    kinesisConfig.properties.getProperty(ConsumerConfigConstants.SHARD_GETRECORDS_BACKOFF_MAX) shouldBe "60000"
+    kinesisConfig.properties.getProperty(ConsumerConfigConstants.SHARD_GETRECORDS_INTERVAL_MILLIS) shouldBe "2000"
+    // exponential constant is not yet user-overridable; check default is still set
+    kinesisConfig.properties.getProperty(ConsumerConfigConstants.SHARD_GETRECORDS_BACKOFF_EXPONENTIAL_CONSTANT) shouldBe Defaults.GetRecordsBackoffExponentialConstant
   }
 
   it should "use ASSUME_ROLE credentials provider when role ARN is provided" in {

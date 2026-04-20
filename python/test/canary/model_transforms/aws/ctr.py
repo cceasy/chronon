@@ -2,8 +2,7 @@ from joins.aws import demo
 from models.aws import click_through_rate
 
 # Create a ModelTransforms where we enrich the demo join fields with the ctr model score
-from ai.chronon.model import ModelTransforms
-from ai.chronon.source import JoinSource
+from ai.chronon.types import JoinSource, ModelTransforms
 
 from ai.chronon.data_types import DataType
 

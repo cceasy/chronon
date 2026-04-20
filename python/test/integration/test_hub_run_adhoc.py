@@ -51,7 +51,7 @@ def test_run_adhoc(confs, chronon_root, hub_url, cloud, flink_cleanup):
 
     workflow_id = submit_run_adhoc(
         runner, chronon_root, hub_url,
-        confs[DEMO_BACKFILL[cloud]], "2025-08-01",
+        confs(DEMO_BACKFILL[cloud]), "2025-08-01",
     )
     flink_cleanup["workflow_id"] = workflow_id
 
@@ -67,7 +67,7 @@ def test_run_adhoc_no_data(confs, chronon_root, hub_url, cloud):
 
     workflow_id = submit_run_adhoc(
         runner, chronon_root, hub_url,
-        confs[DEMO_BACKFILL[cloud]], "1969-01-01",
+        confs(DEMO_BACKFILL[cloud]), "1969-01-01",
     )
 
     poll_workflow_until(

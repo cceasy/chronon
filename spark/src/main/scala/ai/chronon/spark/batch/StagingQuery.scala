@@ -121,13 +121,13 @@ object StagingQuery {
       "max_date",
       args => {
         lazy val table = args("table")
-        lazy val partitions = tu.partitions(table)
         if (table == null) {
           throw new IllegalArgumentException(s"No table in args:[$args] to macro max_date")
-        } else if (partitions.isEmpty) {
-          throw new IllegalStateException(s"No partitions exist for table $table to calculate max_date")
         }
-        partitions.max
+        tu.lastAvailablePartition(table)
+          .getOrElse(
+            throw new IllegalStateException(s"No partitions exist for table $table to calculate max_date")
+          )
       }
     )
 

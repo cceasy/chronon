@@ -1,7 +1,4 @@
-from gen_thrift.api.ttypes import EventSource, Source
-
-from ai.chronon.group_by import Aggregation, GroupBy, Operation, TimeUnit, Window
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Aggregation, EventSource, GroupBy, Operation, Query, TimeUnit, Window, selects
 from ai.chronon.types import EnvironmentVariables
 
 """
@@ -10,11 +7,10 @@ It tracks various user behaviors (views, clicks, purchases, favorites, add_to_ca
 with last_k, sum, and average aggregations over multiple time windows.
 """
 
-source = Source(
-    events=EventSource(
-        table="demo.user_activities_raw",
-        topic="kinesis://user-activities/serde=glue_registry/registry_name=zipline-canary/schema_name=user-activities",
-        query=Query(
+source = EventSource(
+    table="demo.user_activities_raw",
+    topic="kinesis://user-activities/serde=glue_registry/registry_name=zipline-canary/schema_name=user-activities",
+    query=Query(
             selects=selects(
                 user_id="user_id",
                 listing_id="listing_id",
@@ -32,8 +28,7 @@ source = Source(
                 user_event_struct="STRUCT(event_type, listing_id, unix_millis(TIMESTAMP(event_time_ms)) as timestamp)",
             ),
             time_column="unix_millis(TIMESTAMP(event_time_ms))",
-        ),
-    )
+    ),
 )
 
 # Define window sizes for aggregations (1d, 7d, 14d, 30d)
@@ -75,7 +70,7 @@ v1 = GroupBy(
     online=True,
     version=1,
     aggregations=aggregations,
-    step_days=30,
+    step_days=10,
     env_vars=EnvironmentVariables(
         common={
             "CHRONON_ONLINE_ARGS": "-Ztasks=1",
@@ -83,11 +78,10 @@ v1 = GroupBy(
     ),
 )
 
-kafka_source = Source(
-    events=EventSource(
-        table="demo.user_activities_raw",
-        topic="kafka://user-activities-js/serde=glue_registry/registry_name=zipline-canary/schema_name=user-activities-js",
-        query=Query(
+kafka_source = EventSource(
+    table="demo.user_activities_raw",
+    topic="kafka://user-activities-js/serde=glue_registry/registry_name=zipline-canary/schema_name=user-activities-js",
+    query=Query(
             selects=selects(
                 user_id="user_id",
                 listing_id="listing_id",
@@ -102,8 +96,7 @@ kafka_source = Source(
                 user_event_struct="STRUCT(event_type, listing_id, unix_millis(TIMESTAMP(event_time_ms)) as timestamp)",
             ),
             time_column="unix_millis(TIMESTAMP(event_time_ms))",
-        ),
-    )
+    ),
 )
 
 kafka_v1 = GroupBy(
@@ -112,7 +105,7 @@ kafka_v1 = GroupBy(
     online=True,
     version=1,
     aggregations=aggregations,
-    step_days=30,
+    step_days=10,
     env_vars=EnvironmentVariables(
         common={
             "CHRONON_ONLINE_ARGS": "-Ztasks=1 -Zbootstrap=b-1.ziplinecanarykafka.hak90r.c4.kafka.us-west-2.amazonaws.com:9092",

@@ -26,6 +26,7 @@ import scala.concurrent.ExecutionContext$;
  *   - startTime: Start time in milliseconds (required)
  *   - endTime: End time in milliseconds (required)
  *   - dataset: Dataset name (optional, defaults to ENHANCED_STATS)
+ *   - semanticHash: Config hash to read from a specific shard (optional, omit for legacy un-sharded data)
  */
 public class StatsHandler implements Handler<RoutingContext> {
 
@@ -50,6 +51,7 @@ public class StatsHandler implements Handler<RoutingContext> {
         String startTimeStr = ctx.request().getParam("startTime");
         String endTimeStr = ctx.request().getParam("endTime");
         String datasetName = ctx.request().getParam("dataset");
+        String semanticHash = ctx.request().getParam("semanticHash");
 
         // Validate required parameters
         if (startTimeStr == null || endTimeStr == null) {
@@ -78,14 +80,14 @@ public class StatsHandler implements Handler<RoutingContext> {
             datasetName = Constants.EnhancedStatsDataset();
         }
 
-        logger.info("Fetching stats for table: {}, timeRange: [{}, {}], dataset: {}",
-                tableName, startTimeMillis, endTimeMillis, datasetName);
+        logger.info("Fetching stats for table: {}, timeRange: [{}, {}], dataset: {}, semanticHash: {}",
+                tableName, startTimeMillis, endTimeMillis, datasetName, semanticHash != null ? semanticHash : "(none)");
 
         // Create stats service and fetch stats
         // Use default table name "ENHANCED_STATS" for BigTable storage
         JavaStatsService statsService = new JavaStatsService(api, "ENHANCED_STATS", datasetName, ec);
         CompletableFuture<JavaStatsResponse> statsResponseFuture =
-                statsService.fetchStats(tableName, startTimeMillis, endTimeMillis);
+                statsService.fetchStats(tableName, startTimeMillis, endTimeMillis, semanticHash);
 
         // Convert Java future to Vert.x Future
         Future<JavaStatsResponse> vertxFuture = Future.fromCompletionStage(statsResponseFuture);

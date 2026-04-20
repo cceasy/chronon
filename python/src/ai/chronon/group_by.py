@@ -15,8 +15,9 @@
 import inspect
 import json
 import logging
+from collections.abc import Sequence
 from copy import deepcopy
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import ai.chronon.utils as utils
 import ai.chronon.windows as window_utils
@@ -24,6 +25,14 @@ import gen_thrift.api.ttypes as ttypes
 import gen_thrift.common.ttypes as common
 
 OperationType = int  # type(zthrift.Operation.FIRST)
+OperationWithArgs = Tuple[ttypes.Operation, Dict[str, str]]
+
+
+def get_columns(source):
+    query = utils.get_query(source)
+    assert query.selects is not None, "Please specify selects in your Source/Query"
+    columns = query.selects.keys()
+    return columns
 
 
 def _get_output_table_name(obj, full_name: bool = False):
@@ -48,19 +57,9 @@ LOGGER = logging.getLogger()
 
 def collector(
     op: ttypes.Operation,
-) -> Callable[[int], Tuple[ttypes.Operation, Dict[str, str]]]:
-    return lambda k: (op, {"k": str(k)})
-
-
-def generic_collector(op: ttypes.Operation, required, **kwargs):
-    def _collector(*args, **other_args):
-        arguments = kwargs.copy() if kwargs else {}
-        for idx, arg in enumerate(required):
-            arguments[arg] = args[idx]
-        arguments.update(other_args)
-        return (op, {k: str(v) for k, v in arguments.items()})
-
-    return _collector
+    k: int,
+) -> OperationWithArgs:
+    return (op, {"k": str(k)})
 
 
 # To simplify imports
@@ -84,11 +83,17 @@ class Operation:
     APPROX_UNIQUE_COUNT = ttypes.Operation.APPROX_UNIQUE_COUNT
     """Approximate count of unique values using CPC (Compressed Probability Counting) sketch"""
 
-    APPROX_UNIQUE_COUNT_LGK = collector(ttypes.Operation.APPROX_UNIQUE_COUNT)
-    """Configurable approximate unique count with lgK parameter for sketch size tuning.
-    Default lgK is 8. See CpcSketch.java for accuracy vs size tradeoffs:
-    https://github.com/apache/incubator-datasketches-java/blob/master/src/main/java/org/apache/datasketches/cpc/CpcSketch.java#L180
-    """
+    @staticmethod
+    def APPROX_UNIQUE_COUNT_LGK(k: int) -> OperationWithArgs:
+        """
+        Configurable approximate unique count with lgK parameter for sketch size tuning.
+
+        :param k: lgK sketch parameter. Larger values use more memory and improve approximation accuracy.
+
+        Default lgK is 8. See CpcSketch.java for accuracy vs size tradeoffs:
+        https://github.com/apache/incubator-datasketches-java/blob/master/src/main/java/org/apache/datasketches/cpc/CpcSketch.java#L180
+        """
+        return collector(ttypes.Operation.APPROX_UNIQUE_COUNT, k)
 
     UNIQUE_COUNT = ttypes.Operation.UNIQUE_COUNT
     """
@@ -117,44 +122,105 @@ class Operation:
     HISTOGRAM = ttypes.Operation.HISTOGRAM
     """Full frequency distribution of values"""
 
-    FREQUENT_K = collector(ttypes.Operation.HISTOGRAM)
-    """
-    !! Could be expensive if the cardinality of the column is high !!
-    Computes columns values that are frequent in the input column exactly.
-    Produces a map of items as keys and counts as values.
-    """
+    @staticmethod
+    def FREQUENT_K(k: int) -> OperationWithArgs:
+        """
+        Computes column values that are frequent in the input column exactly.
 
-    APPROX_FREQUENT_K = collector(ttypes.Operation.APPROX_FREQUENT_K)
-    """
-    Computes columns values that are frequent in the input column approximately.
-    Produces a map of items as keys and counts as values approximately.
-    """
+        :param k: Maximum number of frequent values to retain in the output map.
 
-    APPROX_HEAVY_HITTERS_K = collector(ttypes.Operation.APPROX_HEAVY_HITTERS_K)
-    """
-    Computes column values that are skewed in the input column.
-    Produces a map of items as keys and counts as values approximately.
-    Different from APPROX_FREQUENT_K in that it only retains if a value is abnormally
-    more frequent.
-    """
+        Warning: Could be expensive if the cardinality of the column is high.
+        Produces a map of items as keys and counts as values.
+        """
+        return collector(ttypes.Operation.HISTOGRAM, k)
 
-    FIRST_K = collector(ttypes.Operation.FIRST_K)
-    """Returns first k input column values by time column"""
+    @staticmethod
+    def APPROX_FREQUENT_K(k: int) -> OperationWithArgs:
+        """
+        Computes column values that are frequent in the input column approximately.
 
-    LAST_K = collector(ttypes.Operation.LAST_K)
-    """Returns last k input column values by time column"""
+        :param k: Maximum number of frequent values to retain in the output map.
 
-    TOP_K = collector(ttypes.Operation.TOP_K)
-    """Returns k largest values of the input column. Input needs to be sortable."""
+        Produces a map of items as keys and counts as values approximately.
+        """
+        return collector(ttypes.Operation.APPROX_FREQUENT_K, k)
 
-    BOTTOM_K = collector(ttypes.Operation.BOTTOM_K)
-    """Returns k smallest values of the input column"""
+    @staticmethod
+    def APPROX_HEAVY_HITTERS_K(k: int) -> OperationWithArgs:
+        """
+        Computes column values that are skewed in the input column.
 
-    UNIQUE_TOP_K = collector(ttypes.Operation.UNIQUE_TOP_K)
-    """Returns top k unique elements ranked by their values. Automatically deduplicates inputs. For structs, requires sort_key (String) and unique_id (Long) fields."""
+        :param k: Maximum number of heavy hitters to retain in the output map.
 
-    APPROX_PERCENTILE = generic_collector(ttypes.Operation.APPROX_PERCENTILE, ["percentiles"], k=20)
-    """Approximate percentile calculation with configurable accuracy parameter k=20"""
+        Produces a map of items as keys and counts as values approximately.
+        Different from APPROX_FREQUENT_K in that it only retains if a value is abnormally
+        more frequent.
+        """
+        return collector(ttypes.Operation.APPROX_HEAVY_HITTERS_K, k)
+
+    @staticmethod
+    def FIRST_K(k: int) -> OperationWithArgs:
+        """
+        Returns first k input column values by time column.
+
+        :param k: Number of earliest values to return.
+        """
+        return collector(ttypes.Operation.FIRST_K, k)
+
+    @staticmethod
+    def LAST_K(k: int) -> OperationWithArgs:
+        """
+        Returns last k input column values by time column.
+
+        :param k: Number of latest values to return.
+        """
+        return collector(ttypes.Operation.LAST_K, k)
+
+    @staticmethod
+    def TOP_K(k: int) -> OperationWithArgs:
+        """
+        Returns k largest values of the input column.
+
+        :param k: Number of largest values to return.
+        """
+        return collector(ttypes.Operation.TOP_K, k)
+
+    @staticmethod
+    def BOTTOM_K(k: int) -> OperationWithArgs:
+        """
+        Returns k smallest values of the input column.
+
+        :param k: Number of smallest values to return.
+        """
+        return collector(ttypes.Operation.BOTTOM_K, k)
+
+    @staticmethod
+    def UNIQUE_TOP_K(k: int) -> OperationWithArgs:
+        """
+        Returns top k unique elements ranked by their values.
+
+        :param k: Number of unique top-ranked values to return.
+
+        Automatically deduplicates inputs. For structs, requires sort_key (String)
+        and unique_id (Long) fields.
+        """
+        return collector(ttypes.Operation.UNIQUE_TOP_K, k)
+
+    @staticmethod
+    def APPROX_PERCENTILE(
+        percentiles: Union[List[float], str],
+        k: int = 20,
+    ) -> OperationWithArgs:
+        """
+        Approximate percentile calculation over the input column.
+
+        :param percentiles: Quantiles to compute as values between 0 and 1.
+        :param k: KLL sketch parameter. Larger values use more memory and improve approximation accuracy.
+        """
+        return (
+            ttypes.Operation.APPROX_PERCENTILE,
+            {"k": str(k), "percentiles": str(percentiles)},
+        )
 
 
 def Aggregations(**agg_dict):
@@ -169,7 +235,7 @@ def DefaultAggregation(keys, sources, operation=Operation.LAST, tags=None):
     aggregate_columns = []
     for source in sources:
         query = utils.get_query(source)
-        columns = utils.get_columns(source)
+        columns = get_columns(source)
         non_aggregate_columns = keys + [
             "ts",
             "is_before",
@@ -201,7 +267,7 @@ def op_to_str(operation: OperationType):
 # See docs/Aggregations.md
 def Aggregation(
     input_column: str = None,
-    operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
+    operation: Union[ttypes.Operation, OperationWithArgs] = None,
     windows: Union[List[common.Window], List[str]] = None,
     buckets: List[str] = None,
     tags: Dict[str, str] = None,
@@ -246,16 +312,18 @@ def Window(length: int, time_unit: common.TimeUnit) -> common.Window:
 
 def Derivation(name: str, expression: str) -> ttypes.Derivation:
     """
-    Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
-    output schema. It is supported for offline computations for now.
-
-    If both name and expression are set to "*", then every raw column will be included along with the derived columns.
-
-    :param name: output column name of the SQL expression
-    :param expression: any valid Spark SQL select clause based on joinPart or externalPart columns
-    :return: a Derivation object representing a single derived column or a wildcard ("*") selection.
+    .. deprecated::
+        Use ``from ai.chronon.types import Derivation`` instead.
     """
-    return ttypes.Derivation(name=name, expression=expression)
+    import warnings
+    warnings.warn(
+        "Importing Derivation from ai.chronon.group_by is deprecated. "
+        "Use 'from ai.chronon.types import Derivation' instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    from ai.chronon.derivation import Derivation as _Derivation
+    return _Derivation(name=name, expression=expression)
 
 
 def contains_windowed_aggregation(aggregations: Optional[List[ttypes.Aggregation]]):
@@ -272,7 +340,7 @@ def validate_group_by(group_by: ttypes.GroupBy):
     keys = group_by.keyColumns
     aggregations = group_by.aggregations
     # check ts is not included in query.select
-    first_source_columns = set(utils.get_columns(sources[0]))
+    first_source_columns = set(get_columns(sources[0]))
     # TODO undo this check after ml_models CI passes
     assert "ts" not in first_source_columns, (
         "'ts' is a reserved key word for Chronon, please specify the expression in timeColumn"
@@ -301,7 +369,7 @@ def validate_group_by(group_by: ttypes.GroupBy):
     column_set = None
     # all sources should select the same columns
     for i, source in enumerate(sources[1:]):
-        column_set = set(utils.get_columns(source))
+        column_set = set(get_columns(source))
         column_diff = column_set ^ first_source_columns
         assert not column_diff, f"""
 Mismatched columns among sources [1, {i + 2}], Difference: {column_diff}
@@ -331,7 +399,7 @@ Keys {unselected_keys}, are unselected in source
             "You can only set aggregations=None in an EntitySource without mutations"
         )
     else:
-        columns = set([c for src in sources for c in utils.get_columns(src)])
+        columns = set([c for src in sources for c in get_columns(src)])
         for agg in aggregations:
             assert agg.inputColumn, (
                 f"input_column is required for all operations, found: input_column = {agg.inputColumn} "
@@ -412,7 +480,7 @@ def get_output_col_names(aggregation):
 
 
 def GroupBy(
-    sources: Union[List[utils.ANY_SOURCE_TYPE], utils.ANY_SOURCE_TYPE],
+    sources: Union[Sequence[utils.ANY_SOURCE_TYPE], utils.ANY_SOURCE_TYPE],
     keys: List[str],
     aggregations: Optional[List[ttypes.Aggregation]],
     version: Optional[int] = None,
@@ -461,7 +529,7 @@ def GroupBy(
 
         Multiple sources can be supplied to backfill the historical values with their respective start and end
         partitions. However, only one source is allowed to be a streaming one.
-    :type sources: List[gen_thrift.api.ttypes.Events|gen_thrift.api.ttypes.Entities]
+    :type sources: List of sources or a single source
     :param keys:
         List of primary keys that defines the data that needs to be collected in the result table. Similar to the
         GroupBy in the SQL context.
@@ -539,7 +607,7 @@ def GroupBy(
     :param online_schedule:
         The online schedule interval for real-time serving jobs. Supports standard cron expressions
         that run at most once per day. When online=True and online_schedule is not specified,
-        defaults to "@daily". Set to None to explicitly disable online scheduling even when online=True.
+        defaults to "@daily". Set to "@never" to explicitly disable online scheduling even when online=True.
         Examples follow the same format as offline_schedule.
     :type online_schedule: Optional[str]
     :param tags:
@@ -613,25 +681,26 @@ def GroupBy(
             )
         return source
 
-    if not isinstance(sources, list):
-        sources = [sources]
-
     sources = [
-        _sanitize_columns(utils.normalize_source(source, output_namespace)) for source in sources
+        _sanitize_columns(source)
+        for source in utils.normalize_sources(sources, output_namespace)
     ]
 
     # get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
 
     # Validate online_schedule based on online flag
-    if not online and online_schedule is not None:
+    if not online and online_schedule is not None and online_schedule != "@never":
         raise ValueError(
             "online_schedule cannot be set when online=False. "
             "Either set online=True or remove the online_schedule parameter."
         )
 
+    # "@never" explicitly disables online scheduling even when online=True
+    if online_schedule == "@never":
+        online_schedule = None
     # Set default online_schedule if online is True and online_schedule is not specified
-    if online and online_schedule is None:
+    elif online and online_schedule is None:
         online_schedule = "@daily"
 
     exec_info = common.ExecutionInfo(

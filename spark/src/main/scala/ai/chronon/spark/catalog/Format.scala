@@ -5,8 +5,8 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import org.apache.spark.sql.catalyst.util.QuotingUtils
 import org.apache.spark.sql.connector.catalog.Identifier
-import org.apache.spark.sql.functions.{col, date_format, min, max}
-import org.apache.spark.sql.types.{DateType, StructType}
+import org.apache.spark.sql.functions.{col, date_format, date_sub, min, max}
+import org.apache.spark.sql.types.{DateType, StringType, StructType}
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.util.{Failure, Success, Try}
@@ -63,6 +63,11 @@ trait Format {
 
   }
 
+  // Allow formats to remap the caller-provided column to the name actually used in storage
+  // (e.g. a format that stores partitions under an uppercase key, or discovers the real column from metadata)
+  protected def resolvePartitionColumn(tableName: String, partitionColumn: String)(implicit
+      sparkSession: SparkSession): String = partitionColumn
+
   // Return the primary partitions (based on the 'partitionColumn') filtered down by sub-partition filters if provided
   // If subpartition filters are supplied and the format doesn't support it, we throw an error
   def primaryPartitions(tableName: String,
@@ -75,10 +80,17 @@ trait Format {
       throw new NotImplementedError("subPartitionsFilter is not supported on this format")
     }
 
+    // Allow formats to remap the caller-provided column to the name actually used in storage
+    val effectiveColumn = resolvePartitionColumn(tableName, partitionColumn)
+
     val partitionSeq = Try(partitions(tableName, partitionFilters)(sparkSession)) match {
       case Success(p) => p
-      case Failure(e) =>
+      case Failure(e) if Option(e.getMessage).exists(_.contains("TABLE_OR_VIEW_NOT_FOUND")) =>
         logger.warn(s"Failed to get partitions for $tableName: ${e.getMessage}")
+        List.empty
+      case Failure(e) =>
+        logger.warn(
+          s"Failed to get partitions for $tableName: ${e.getClass.getSimpleName}: ${Option(e.getMessage).getOrElse("(no message)")}")
         List.empty
     }
 
@@ -88,7 +100,7 @@ trait Format {
           partitionMap.get(k).contains(v)
         }
       ) {
-        partitionMap.get(partitionColumn)
+        partitionMap.get(effectiveColumn)
       } else {
         None
       }
@@ -107,8 +119,104 @@ trait Format {
   // Does this format support sub partitions filters
   def supportSubPartitionsFilter: Boolean
 
-  // Returns the max date present in a timestamp/date column, formatted as a partition date string.
-  // Used by sensors to check if data covers a required date range.
+  // Unified last available partition: handles both string partition columns and timestamp/date columns.
+  // For string columns that are catalog partitions (Hive/Iceberg/Delta), uses metadata-only lookup — no data scan.
+  // For timestamp/date columns, falls back to a scan: DATE(MAX(col)) - 1 day.
+  def lastAvailablePartition(tableName: String, partitionColumn: String, partitionSpec: PartitionSpec)(implicit
+      sparkSession: SparkSession): Option[String] = {
+    // Try metadata-based partition listing first (free for Hive/Iceberg/Delta)
+    val metadataResult = Try(primaryPartitions(tableName, partitionColumn, "")(sparkSession)) match {
+      case Success(metadata) =>
+        metadata.flatMap(Option(_)) match {
+          // Partition metadata might not exist, if it does not then there are no partitions.
+          case parts if parts.nonEmpty => Some(parts.max)
+          case _                       => None
+        }
+      case Failure(ex) =>
+        logger.warn(
+          s"[NonFatal] Failed to check primary partitions for ${tableName}, falling back to data scan: ${ex.getMessage}");
+        None
+    }
+    if (metadataResult.isDefined) return metadataResult
+
+    // Fall back to data scan for non-partitioned tables or timestamp/date columns
+    import sparkSession.implicits._
+    Try {
+      val df = sparkSession.read.table(tableName)
+      val colType = df.schema(partitionColumn).dataType
+      colType match {
+        case StringType =>
+          df.select(max(col(partitionColumn)).as("last_partition"))
+            .as[String]
+            .collect()
+            .headOption
+            .flatMap(v => Option(v))
+        case _ =>
+          df.select(date_format(date_sub(max(col(partitionColumn)).cast(DateType), 1), partitionSpec.format)
+            .as("last_partition"))
+            .as[String]
+            .collect()
+            .headOption
+            .flatMap(v => Option(v))
+      }
+    } match {
+      case Success(result) => result
+      case Failure(e) if Option(e.getMessage).exists(_.contains("TABLE_OR_VIEW_NOT_FOUND")) =>
+        logger.warn(s"Failed to get last available partition for $tableName: ${e.getMessage}")
+        None
+      case Failure(e) =>
+        logger.warn(
+          s"Failed to get last available partition for $tableName: ${e.getClass.getSimpleName}: ${Option(e.getMessage).getOrElse("(no message)")}")
+        None
+    }
+  }
+
+  // Unified first available partition: handles both string partition columns and timestamp/date columns.
+  // For string columns that are catalog partitions, uses metadata-only lookup.
+  // For timestamp/date columns, falls back to a scan.
+  def firstAvailablePartition(tableName: String, partitionColumn: String, partitionSpec: PartitionSpec)(implicit
+      sparkSession: SparkSession): Option[String] = {
+    val metadataResult = Try(primaryPartitions(tableName, partitionColumn, "")(sparkSession)) match {
+      case Success(metadata) =>
+        metadata.flatMap(Option(_)) match {
+          case parts if parts.nonEmpty => Some(parts.min)
+          case _                       => None
+        }
+      case _ => None
+    }
+    if (metadataResult.isDefined) return metadataResult
+
+    import sparkSession.implicits._
+    Try {
+      val df = sparkSession.read.table(tableName)
+      val colType = df.schema(partitionColumn).dataType
+      colType match {
+        case StringType =>
+          df.select(min(col(partitionColumn)).as("first_partition"))
+            .as[String]
+            .collect()
+            .headOption
+            .flatMap(v => Option(v))
+        case _ =>
+          df.select(date_format(min(col(partitionColumn)).cast(DateType), partitionSpec.format).as("first_partition"))
+            .as[String]
+            .collect()
+            .headOption
+            .flatMap(v => Option(v))
+      }
+    } match {
+      case Success(result) => result
+      case Failure(e) if Option(e.getMessage).exists(_.contains("TABLE_OR_VIEW_NOT_FOUND")) =>
+        logger.warn(s"Failed to get first available partition for $tableName: ${e.getMessage}")
+        None
+      case Failure(e) =>
+        logger.warn(
+          s"Failed to get first available partition for $tableName: ${e.getClass.getSimpleName}: ${Option(e.getMessage).getOrElse("(no message)")}")
+        None
+    }
+  }
+
+  @deprecated("Use lastAvailablePartition instead", "0.1.0")
   def maxTimestampDate(tableName: String, timestampColumn: String, partitionSpec: PartitionSpec)(implicit
       sparkSession: SparkSession): Option[String] = {
     import sparkSession.implicits._
@@ -127,15 +235,12 @@ trait Format {
     }
   }
 
-  // Derive virtual partitions from MIN/MAX of a timestamp/date column.
-  // Returns all dates between min and max as formatted date strings.
+  @deprecated("Use lastAvailablePartition/firstAvailablePartition instead", "0.1.0")
   def virtualPartitions(tableName: String, timestampColumn: String, partitionSpec: PartitionSpec)(implicit
       sparkSession: SparkSession): List[String] = {
     import sparkSession.implicits._
     Try {
       val df = sparkSession.read.table(tableName)
-      // Cast to date first (truncates to date in session timezone), then compute min/max
-      // Compute min/max first, then cast — allows Spark to use Parquet file-level statistics
       val result = df
         .select(
           date_format(min(col(timestampColumn)).cast(DateType), partitionSpec.format).as("min_date"),

@@ -88,8 +88,11 @@ object SparkSessionBuilder {
     val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
     println(s"Using warehouse dir: $warehouseDir")
 
+    // Read existing Spark config (e.g. from spark-submit --conf) so we don't clobber user settings.
+    val existingConf = new org.apache.spark.SparkConf()
+
     val baseConfigs = Map(
-      "spark.sql.session.timeZone" -> "UTC",
+      "spark.sql.session.timeZone" -> existingConf.get("spark.sql.session.timeZone", "UTC"),
       // needs to be uppercase until https://github.com/GoogleCloudDataproc/spark-bigquery-connector/pull/1313 is available
       "spark.sql.sources.partitionOverwriteMode" -> "DYNAMIC",
       "hive.exec.dynamic.partition" -> "true",
@@ -120,8 +123,19 @@ object SparkSessionBuilder {
         "spark.local.dir" -> s"/tmp/$userName/${name}_$warehouseId",
         "spark.sql.warehouse.dir" -> s"$warehouseDir/data",
         "spark.hadoop.javax.jdo.option.ConnectionURL" -> metastoreDb,
+        "spark.driver.host" -> "127.0.0.1",
         "spark.driver.bindAddress" -> "127.0.0.1",
-        "spark.ui.enabled" -> "false"
+        "spark.ui.enabled" -> "false",
+        "spark.sql.catalogImplementation" -> "hive",
+        // Defaults for ModularMonolith's increased resource requirements; overridable via additionalConfig
+        "spark.driver.memory" -> "4g",
+        "spark.executor.memory" -> "4g",
+        "spark.default.parallelism" -> "2",
+        "spark.sql.shuffle.partitions" -> "4",
+        "spark.network.timeout" -> "600s",
+        "spark.executor.heartbeatInterval" -> "60s",
+        "spark.storage.memoryFraction" -> "0.5",
+        "spark.shuffle.memoryFraction" -> "0.3"
       )
     } else Map.empty[String, String]
 

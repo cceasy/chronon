@@ -15,7 +15,7 @@
 from gen_thrift.api.ttypes import EventSource, Source
 from staging_queries.kaggle.outbrain import base_table
 
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Query, selects
 
 """
 Sources allow one-to-one transformations (i.e. row level transformations like ROUND, IF, etc.), but no joins (for this you must use a StagingQuery) or Aggregation (these occur in GroupBy).

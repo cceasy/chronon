@@ -1,23 +1,19 @@
-from gen_thrift.api.ttypes import EventSource, Source
 from group_bys.azure import purchases
 
-from ai.chronon.join import Join, JoinPart
-from ai.chronon.query import Query, selects
+from ai.chronon.types import EventSource, Join, JoinPart, Query, selects
 
 """
 This is the "left side" of the join that will comprise our training set. It is responsible for providing the primary keys
 and timestamps for which features will be computed.
 """
-source = Source(
-    events=EventSource(
-        table="data.checkouts",
-        query=Query(
-            selects=selects(
-                "user_id"
-            ),  # The primary key used to join various GroupBys together
-            time_column="ts",
-        ),  # The event time used to compute feature values as-of
-    )
+source = EventSource(
+    table="data.checkouts",
+    query=Query(
+        selects=selects(
+            "user_id"
+        ),  # The primary key used to join various GroupBys together
+        time_column="ts",
+    ),
 )
 
 v1_test = Join(
@@ -47,17 +43,15 @@ v1_dev = Join(
     version=0,
 )
 
-source_notds = Source(
-    events=EventSource(
-        table="data.checkouts_notds",
-        query=Query(
-            selects=selects(
-                "user_id"
-            ),  # The primary key used to join various GroupBys together
-            time_column="ts",
-            partition_column="notds",
-        ),  # The event time used to compute feature values as-of
-    )
+source_notds = EventSource(
+    table="data.checkouts_notds",
+    query=Query(
+        selects=selects(
+            "user_id"
+        ),  # The primary key used to join various GroupBys together
+        time_column="ts",
+        partition_column="notds",
+    ),
 )
 
 v1_test_notds = Join(

@@ -14,7 +14,7 @@
 
 from staging_queries.sample_team import sample_staging_query
 
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Query, selects
 from ai.chronon.types import EntitySource, EventSource
 
 

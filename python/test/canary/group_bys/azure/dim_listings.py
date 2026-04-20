@@ -1,8 +1,6 @@
 from staging_queries.azure import exports
 
-from ai.chronon.group_by import GroupBy
-from ai.chronon.query import Query, selects
-from ai.chronon.source import EntitySource
+from ai.chronon.types import EntitySource, GroupBy, Query, selects
 
 """
 This GroupBy creates a simple passthrough transformation on the dim_listings table.
@@ -42,5 +40,40 @@ v3 = GroupBy(
     sources=[source],
     keys=["listing_id"],  # Key by listing_id for point lookups
     online=True,
+    aggregations=None,  # No aggregations - this is a simple passthrough
+)
+
+pc_source = EntitySource(
+    # Snowflake table written directly by the batch process
+    snapshot_table=exports.dim_listings_pc.table,
+    query=Query(
+        selects=selects(
+            listing_id="CAST(listing_id AS INT)",
+            merchant_id="merchant_id",
+            headline="headline",
+            brief_description="brief_description",
+            long_description="long_description",
+            price_cents="price_cents",
+            currency="currency",
+            inventory_count="inventory_count",
+            primary_category="primary_category",
+            is_active="is_active",
+            weight_grams="weight_grams",
+            tags="tags",
+            # Derived features
+            is_expensive="IF(price_cents > 10000, 1, 0)",  # Over $100
+            is_in_stock="IF(inventory_count > 0, 1, 0)",
+            main_image_path="main_image_path",
+            secondary_image_paths="secondary_image_paths",
+        ),
+        start_partition="2025-01-01"
+    ),
+
+)
+
+pc_v3 = GroupBy(
+    sources=[pc_source],
+    keys=["listing_id"],  # Key by listing_id for point lookups
+    online=False,
     aggregations=None,  # No aggregations - this is a simple passthrough
 )

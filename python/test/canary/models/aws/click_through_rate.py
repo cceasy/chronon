@@ -1,9 +1,6 @@
 from staging_queries.aws import ctr_labels
 
-from ai.chronon.model import Model, ModelBackend, InferenceSpec, ModelTransforms, TrainingSpec, ResourceConfig, DeploymentSpec, ServingContainerConfig, EndpointConfig, RolloutStrategy, DeploymentStrategyType
-from ai.chronon.query import Query, selects
-from ai.chronon.group_by import Window, TimeUnit
-from ai.chronon.source import JoinSource, EventSource
+from ai.chronon.types import DeploymentSpec, DeploymentStrategyType, EndpointConfig, EventSource, InferenceSpec, JoinSource, Model, ModelBackend, ModelTransforms, Query, ResourceConfig, RolloutStrategy, ServingContainerConfig, TimeUnit, TrainingSpec, Window, selects
 
 from ai.chronon.data_types import DataType
 

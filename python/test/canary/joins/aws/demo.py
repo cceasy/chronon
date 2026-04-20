@@ -1,10 +1,7 @@
 from group_bys.aws import dim_listings, dim_merchants, user_activities
 from staging_queries.aws import exports
 
-from ai.chronon.group_by import GroupBy
-from ai.chronon.join import Derivation, Join, JoinPart
-from ai.chronon.query import Query, selects
-from ai.chronon.source import EventSource
+from ai.chronon.types import Derivation, EventSource, GroupBy, Join, JoinPart, Query, selects
 
 """
 This Join combines user activity events with:
@@ -54,7 +51,7 @@ v1 = Join(
     online=True,
     output_namespace="data",
     enable_stats_compute=True,
-    step_days=30,
+    step_days=10,
 )
 
 # Example join with some derivations
@@ -105,5 +102,5 @@ derivations_v1 = Join(
     online=True,
     output_namespace="data",
     enable_stats_compute=True,
-    step_days=30,
+    step_days=10,
 )

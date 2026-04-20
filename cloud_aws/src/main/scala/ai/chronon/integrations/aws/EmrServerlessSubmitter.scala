@@ -1,14 +1,23 @@
 package ai.chronon.integrations.aws
 
 import ai.chronon.api.JobStatusType
+import ai.chronon.integrations.cloud_k8s.K8sFlinkSubmitter
 import ai.chronon.spark.submission.JobSubmitterConstants._
-import ai.chronon.spark.submission.{JobSubmitter, JobType, FlinkJob => TypeFlinkJob, SparkJob => TypeSparkJob}
+import ai.chronon.spark.submission.{
+  JobSubmitter,
+  JobType,
+  StorageClient,
+  FlinkJob => TypeFlinkJob,
+  SparkJob => TypeSparkJob
+}
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.emr.EmrClient
 import software.amazon.awssdk.services.emr.model.ListStudiosRequest
 import software.amazon.awssdk.services.emrserverless.EmrServerlessClient
 import software.amazon.awssdk.services.emrserverless.model._
+import software.amazon.awssdk.services.s3.S3Client
 
+import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.ExecutionContext
 import scala.jdk.CollectionConverters._
@@ -17,17 +26,19 @@ class EmrServerlessSubmitter(
     emrServerlessClient: EmrServerlessClient,
     executionRoleArn: String,
     s3LogUri: String,
-    eksFlinkSubmitter: Option[EksFlinkSubmitter] = None,
-    dynamodbTableName: String = "",
+    eksFlinkSubmitter: Option[K8sFlinkSubmitter] = None,
     awsRegion: String = "",
     override val tablePartitionsDataset: String = "",
     override val dqMetricsDataset: String = "",
+    override val kvStoreApiProperties: Map[String, String] = Map.empty,
     flinkEksServiceAccount: Option[String] = None,
     flinkEksNamespace: Option[String] = None,
     eksClusterName: Option[String] = None,
     ingressBaseUrl: Option[String] = None,
     emrStudioId: Option[String] = None,
     flinkHealthCheckFn: Option[String] => Boolean = _ => true,
+    flinkInternalJobIdFetchFn: Option[String] => Option[String] = _ => None,
+    s3Client: Option[S3Client] = None,
     cloudWatchLogGroupName: Option[String] = None,
     applicationName: String = EmrServerlessSubmitter.DefaultApplicationName
 ) extends JobSubmitter {
@@ -117,7 +128,7 @@ class EmrServerlessSubmitter(
 
         val deploymentName = eksFlinkSubmitter
           .getOrElse(
-            throw new RuntimeException("EksFlinkSubmitter is required for Flink jobs")
+            throw new RuntimeException("K8sFlinkSubmitter is required for Flink jobs")
           )
           .submit(
             jobId = jobId,
@@ -153,7 +164,39 @@ class EmrServerlessSubmitter(
     // fall back to resolvedApplicationId for CLI path
     val appId = submissionProperties.getOrElse(clusterIdentifierKey, resolvedApplicationId)
 
-    val filesParam = if (files.nonEmpty) s" --files ${files.mkString(",")}" else ""
+    val filesParam = if (files.nonEmpty) s"--files ${files.mkString(",")}" else ""
+
+    // EMR Serverless caps properties per Configuration at 100. Anything beyond
+    // that spills into --conf flags on sparkSubmitParameters (same effect on SparkConf,
+    // without the console-side property-count limit).
+    val resolvedProps = resolveEnvVars(jobProperties)
+    val (inlineProps, overflowProps) = EmrServerlessSubmitter.splitForConfigCap(resolvedProps)
+    if (overflowProps.nonEmpty) {
+      logger.warn(
+        s"jobProperties has ${resolvedProps.size} entries, exceeding EMR Serverless cap of " +
+          s"${EmrServerlessSubmitter.MaxPropertiesPerClassification} per classification; " +
+          s"routing ${overflowProps.size} through sparkSubmitParameters as --conf flags")
+    }
+    val overflowConf = overflowProps.toSeq
+      .sortBy(_._1)
+      .map { case (k, v) =>
+        s"--conf ${EmrServerlessSubmitter.maybeShellQuote(s"$k=$v")}"
+      }
+      .mkString(" ")
+
+    val sparkSubmitParams =
+      Seq(s"--class $mainClass", filesParam, overflowConf).filter(_.nonEmpty).mkString(" ")
+
+    val jobName = submissionProperties.getOrElse(JobId, s"chronon-job-${System.currentTimeMillis()}")
+    logger.info(
+      s"EMR Serverless submission for $jobName: ${resolvedProps.size} jobProperties " +
+        s"(${inlineProps.size} in spark-defaults, ${overflowProps.size} as --conf overflow)")
+    if (inlineProps.nonEmpty) {
+      logger.info(
+        s"spark-defaults classification for $jobName:\n  " +
+          inlineProps.toSeq.sortBy(_._1).map { case (k, v) => s"$k = $v" }.mkString("\n  "))
+    }
+    logger.info(s"sparkSubmitParameters for $jobName: $sparkSubmitParams")
 
     val jobDriverBuilder = JobDriver
       .builder()
@@ -162,7 +205,7 @@ class EmrServerlessSubmitter(
           .builder()
           .entryPoint(jarUri)
           .entryPointArguments(args.toList.asJava)
-          .sparkSubmitParameters(s"--class $mainClass$filesParam")
+          .sparkSubmitParameters(sparkSubmitParams)
           .build()
       )
 
@@ -182,17 +225,15 @@ class EmrServerlessSubmitter(
           .build()
       )
 
-    if (jobProperties.nonEmpty) {
+    if (inlineProps.nonEmpty) {
       configOverridesBuilder.applicationConfiguration(
         Configuration
           .builder()
           .classification("spark-defaults")
-          .properties(resolveEnvVars(jobProperties).asJava)
+          .properties(inlineProps.asJava)
           .build()
       )
     }
-
-    val jobName = submissionProperties.getOrElse(JobId, s"chronon-job-${System.currentTimeMillis()}")
 
     val startJobRunRequest = StartJobRunRequest
       .builder()
@@ -251,13 +292,22 @@ class EmrServerlessSubmitter(
   override def status(jobId: String): JobStatusType = {
     if (jobId.startsWith("flink:")) {
       val parts = jobId.split(":", 3)
-      val eksStatus = eksFlinkSubmitter
-        .getOrElse(throw new RuntimeException("EksFlinkSubmitter is required for Flink jobs"))
-        .status(deploymentName = parts(2), namespace = parts(1))
+      val (eksStatus, creationTime) = eksFlinkSubmitter
+        .getOrElse(throw new RuntimeException("K8sFlinkSubmitter is required for Flink jobs"))
+        .statusWithCreationTime(deploymentName = parts(2), namespace = parts(1))
       eksStatus match {
         case JobStatusType.RUNNING if flinkHealthCheckFn(getFlinkUrl(jobId)) => JobStatusType.RUNNING
-        case JobStatusType.RUNNING                                           => JobStatusType.PENDING
-        case other                                                           => other
+        case JobStatusType.RUNNING                                           =>
+          // Health check failed: job is STABLE on K8s but checkpoints haven't accumulated yet.
+          // Within the grace period this is expected (K8s startup consumes part of the window),
+          // so stay PENDING rather than triggering a retrigger.
+          JobSubmitter.flinkStatusWithGrace(
+            jobId,
+            creationTime,
+            EmrServerlessSubmitter.FlinkHealthCheckGracePeriod,
+            logger
+          )
+        case other => other
       }
     } else {
       try {
@@ -291,7 +341,7 @@ class EmrServerlessSubmitter(
     if (jobId.startsWith("flink:")) {
       val parts = jobId.split(":", 3)
       eksFlinkSubmitter
-        .getOrElse(throw new RuntimeException("EksFlinkSubmitter is required for Flink jobs"))
+        .getOrElse(throw new RuntimeException("K8sFlinkSubmitter is required for Flink jobs"))
         .delete(deploymentName = parts(2), namespace = parts(1))
     } else {
       try {
@@ -369,6 +419,24 @@ class EmrServerlessSubmitter(
     ingressBaseUrl.map(base => s"${base.stripSuffix("/")}/flink/$deploymentName/")
   }
 
+  override def getFlinkInternalJobId(jobId: String): Option[String] =
+    flinkInternalJobIdFetchFn(getFlinkUrl(jobId))
+
+  override def getLatestCheckpointPath(flinkInternalJobId: String, flinkStateUri: String): Option[String] = {
+    val s3 = s3Client.getOrElse {
+      logger.warn(s"S3 client not available, cannot resolve checkpoint path for Flink job $flinkInternalJobId")
+      return None
+    }
+    val result = StorageClient.resolveLatestCheckpointPath(new S3StorageClient(s3), flinkInternalJobId, flinkStateUri)
+    result match {
+      case Some(path) => logger.info(s"Resolved latest checkpoint for Flink job $flinkInternalJobId: $path")
+      case None =>
+        logger.warn(
+          s"No checkpoints found for Flink job $flinkInternalJobId at $flinkStateUri/checkpoints/$flinkInternalJobId")
+    }
+    result
+  }
+
   override def buildFlinkSubmissionProps(env: Map[String, String],
                                          version: String,
                                          artifactPrefix: String): Map[String, String] = {
@@ -425,11 +493,6 @@ class EmrServerlessSubmitter(
     }
   }
 
-  override def kvStoreApiProperties: Map[String, String] = Map(
-    "AWS_DYNAMODB_TABLE_NAME" -> dynamodbTableName,
-    "AWS_DEFAULT_REGION" -> awsRegion
-  )
-
   override def close(): Unit = {
     try {
       emrServerlessClient.close()
@@ -443,6 +506,33 @@ object EmrServerlessSubmitter {
 
   private val logger = org.slf4j.LoggerFactory.getLogger(getClass)
   val DefaultApplicationName = "chronon-serverless-app"
+
+  // EMR Serverless StartJobRun API rejects any applicationConfiguration entry whose
+  // properties map has more than 100 keys (service-side validation).
+  val MaxPropertiesPerClassification: Int = 100
+
+  // Characters that force shell-style quoting when embedding a k=v pair into
+  // sparkSubmitParameters. EMR Serverless tokenizes that string shell-style before
+  // invoking spark-submit, so values containing whitespace or shell metacharacters
+  // must be single-quoted to travel as one token.
+  private val NeedsQuoting = """[\s"'\\$`&|;<>(){}*?~#\[\]]""".r
+
+  private[aws] def maybeShellQuote(s: String): String =
+    if (NeedsQuoting.findFirstIn(s).isDefined) "'" + s.replace("'", "'\\''") + "'"
+    else s
+
+  private[aws] def splitForConfigCap(props: Map[String, String]): (Map[String, String], Map[String, String]) =
+    if (props.size <= MaxPropertiesPerClassification) (props, Map.empty)
+    else {
+      val sorted = props.toSeq.sortBy(_._1)
+      val (head, tail) = sorted.splitAt(MaxPropertiesPerClassification)
+      (head.toMap, tail.toMap)
+    }
+
+  // Total grace period from CRD creation before an unhealthy STABLE job is marked FAILED.
+  // K8sFlinkSubmitter already allows up to 10 minutes for the deployment to reach STABLE,
+  // so this window covers that plus additional time for checkpoints to accumulate post-STABLE.
+  val FlinkHealthCheckGracePeriod: Duration = Duration.ofMinutes(15)
 
   // Fallback when EMR_STUDIO_ID is not configured. Any studio in the same account/region
   // can view any serverless application, so picking the first one from ListStudios works.
@@ -475,7 +565,6 @@ object EmrServerlessSubmitter {
       awsRegion: String,
       executionRoleArn: String,
       s3LogUri: String,
-      dynamodbTableName: String = "",
       tablePartitionsDataset: String = "",
       dqMetricsDataset: String = "",
       flinkEksServiceAccount: Option[String] = None,
@@ -486,7 +575,10 @@ object EmrServerlessSubmitter {
       cloudWatchLogGroupName: Option[String] = None,
       k8sConfig: Option[io.fabric8.kubernetes.client.Config] = None,
       flinkHealthCheckFn: Option[String] => Boolean = _ => true,
-      applicationName: String = DefaultApplicationName
+      flinkInternalJobIdFetchFn: Option[String] => Option[String] = _ => None,
+      s3Client: Option[S3Client] = None,
+      applicationName: String = DefaultApplicationName,
+      kvStoreApiProperties: Map[String, String] = Map.empty
   ): EmrServerlessSubmitter = {
     val client = EmrServerlessClient
       .builder()
@@ -497,8 +589,7 @@ object EmrServerlessSubmitter {
       client,
       executionRoleArn,
       s3LogUri,
-      eksFlinkSubmitter = Some(new EksFlinkSubmitter(k8sConfig, ingressBaseUrl = ingressBaseUrl)),
-      dynamodbTableName = dynamodbTableName,
+      eksFlinkSubmitter = Some(EksFlinkSubmitter(k8sConfig, ingressBaseUrl = ingressBaseUrl)),
       awsRegion = awsRegion,
       tablePartitionsDataset = tablePartitionsDataset,
       dqMetricsDataset = dqMetricsDataset,
@@ -508,8 +599,11 @@ object EmrServerlessSubmitter {
       ingressBaseUrl = ingressBaseUrl,
       emrStudioId = emrStudioId,
       flinkHealthCheckFn = flinkHealthCheckFn,
+      flinkInternalJobIdFetchFn = flinkInternalJobIdFetchFn,
+      s3Client = s3Client,
       cloudWatchLogGroupName = cloudWatchLogGroupName,
-      applicationName = applicationName
+      applicationName = applicationName,
+      kvStoreApiProperties = kvStoreApiProperties
     )
   }
 

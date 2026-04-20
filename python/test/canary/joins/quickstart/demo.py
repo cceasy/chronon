@@ -1,10 +1,7 @@
 from group_bys.quickstart import dim_listings, dim_merchants, user_activities
 from staging_queries.quickstart import exports
 
-from ai.chronon.group_by import GroupBy
-from ai.chronon.join import Derivation, Join, JoinPart
-from ai.chronon.query import Query, selects
-from ai.chronon.source import EventSource
+from ai.chronon.types import Derivation, EventSource, GroupBy, Join, JoinPart, Query, selects
 
 """
 This Join combines user activity events with:

@@ -15,10 +15,7 @@
 from group_bys.sample_team import sample_group_by_from_join_part
 from sources import sample_sources
 
-from ai.chronon.join import (
-    Join,
-    JoinPart,
-)
+from ai.chronon.types import Join, JoinPart
 
 v1 = Join(
     left=sample_sources.staging_entities,

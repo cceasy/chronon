@@ -6,7 +6,7 @@ them with templated date parameters. Covers non-partitioned, Hive-partitioned,
 and multi-source join patterns.
 """
 
-from ai.chronon.staging_query import StagingQuery
+from ai.chronon.types import StagingQuery
 
 # --- Non-partitioned parquet ---
 # Flat parquet files under an S3 prefix with no partition structure.

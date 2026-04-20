@@ -19,7 +19,7 @@ Sample entity temporal accurate backfill (mutation)
 from group_bys.sample_team import mutation_sample_group_by
 from sources import sample_sources
 
-from ai.chronon.join import Join, JoinPart
+from ai.chronon.types import Join, JoinPart
 
 v0 = Join(
     left=sample_sources.event_source,

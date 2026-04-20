@@ -36,7 +36,12 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
   val columnAggregators: Array[ColumnAggregator] = {
     aggregationParts.zipWithIndex.map { case (spec: AggregationPart, aggregatorIndex: Int) =>
       val ((_, inputType), inputIndex) = {
-        inputSchema.zipWithIndex.find(_._1._1 == spec.inputColumn).get
+        inputSchema.zipWithIndex.find(_._1._1 == spec.inputColumn).getOrElse {
+          throw new IllegalArgumentException(
+            s"Input column '${spec.inputColumn}' (for operation ${spec.operation}) not found in schema. " +
+              s"Available columns: [${inputSchema.map(_._1).mkString(", ")}]"
+          )
+        }
       }
 
       val bucketIndex: Option[Int] = Option(spec.bucket).map { bucketCol =>

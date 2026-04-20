@@ -22,7 +22,7 @@ def test_schedule_lifecycle(confs, test_id, chronon_root, hub_url, cloud):
     runner = CliRunner()
     compile_configs(runner, chronon_root)
 
-    submit_schedule(runner, chronon_root, hub_url, confs[DEMO_BACKFILL[cloud]])
+    submit_schedule(runner, chronon_root, hub_url, confs(DEMO_BACKFILL[cloud]))
 
     schedules = find_schedules_by_test_id(hub_url, test_id)
     assert len(schedules) == 2, f"No schedules found for test_id={test_id}"

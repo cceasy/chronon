@@ -1,4 +1,4 @@
-import inspect
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
@@ -7,7 +7,7 @@ import gen_thrift.common.ttypes as common
 from ai.chronon import utils
 from ai.chronon import windows as window_utils
 from ai.chronon.data_types import DataType, FieldsType
-from ai.chronon.utils import ANY_SOURCE_TYPE, normalize_source
+from ai.chronon.utils import ANY_SOURCE_TYPE, normalize_source, normalize_sources
 
 
 class ModelBackend:
@@ -47,14 +47,10 @@ class InferenceSpec:
     resource_config: Optional[ResourceConfig] = None
 
     def to_thrift(self):
-        resource_config_thrift = None
-        if self.resource_config:
-            resource_config_thrift = self.resource_config.to_thrift()
-
         return ttypes.InferenceSpec(
             modelBackend=self.model_backend,
             modelBackendParams=self.model_backend_params,
-            resourceConfig=resource_config_thrift,
+            resourceConfig=self.resource_config.to_thrift() if self.resource_config else None,
         )
 
 
@@ -70,26 +66,13 @@ class TrainingSpec:
     job_configs: Optional[Dict[str, str]] = None
 
     def to_thrift(self):
-        resource_config_thrift = None
-        if self.resource_config:
-            resource_config_thrift = self.resource_config.to_thrift()
-
-        training_data_source_thrift = None
-        if self.training_data_source:
-            training_data_source_thrift = normalize_source(self.training_data_source)
-
-        # Normalize window - convert string like "30d" or "24h" to common.Window
-        training_data_window_thrift = None
-        if self.training_data_window:
-            training_data_window_thrift = window_utils.normalize_window(self.training_data_window)
-
         return ttypes.TrainingSpec(
-            trainingDataSource=training_data_source_thrift,
-            trainingDataWindow=training_data_window_thrift,
+            trainingDataSource=normalize_source(self.training_data_source) if self.training_data_source else None,
+            trainingDataWindow=window_utils.normalize_window(self.training_data_window) if self.training_data_window else None,
             schedule=self.schedule,
             image=self.image,
             pythonModule=self.python_module,
-            resourceConfig=resource_config_thrift,
+            resourceConfig=self.resource_config.to_thrift() if self.resource_config else None,
             jobConfigs=self.job_configs,
         )
 
@@ -142,17 +125,11 @@ class RolloutStrategy:
     rollout_metric_thresholds: Optional[List[Metric]] = None
 
     def to_thrift(self):
-        rollout_metric_thresholds_thrift = None
-        if self.rollout_metric_thresholds:
-            rollout_metric_thresholds_thrift = [
-                metric.to_thrift() for metric in self.rollout_metric_thresholds
-            ]
-
         return ttypes.RolloutStrategy(
             rolloutType=self.rollout_type,
             validationTrafficPercentRamps=self.validation_traffic_percent_ramps,
             validationTrafficDurationMins=self.validation_traffic_duration_mins,
-            rolloutMetricThresholds=rollout_metric_thresholds_thrift,
+            rolloutMetricThresholds=[m.to_thrift() for m in self.rollout_metric_thresholds] if self.rollout_metric_thresholds else None,
         )
 
 
@@ -164,27 +141,11 @@ class DeploymentSpec:
     rollout_strategy: Optional[RolloutStrategy] = None
 
     def to_thrift(self):
-        container_config_thrift = None
-        if self.container_config:
-            container_config_thrift = self.container_config.to_thrift()
-
-        endpoint_config_thrift = None
-        if self.endpoint_config:
-            endpoint_config_thrift = self.endpoint_config.to_thrift()
-
-        resource_config_thrift = None
-        if self.resource_config:
-            resource_config_thrift = self.resource_config.to_thrift()
-
-        rollout_strategy_thrift = None
-        if self.rollout_strategy:
-            rollout_strategy_thrift = self.rollout_strategy.to_thrift()
-
         return ttypes.DeploymentSpec(
-            containerConfig=container_config_thrift,
-            endpointConfig=endpoint_config_thrift,
-            resourceConfig=resource_config_thrift,
-            rolloutStrategy=rollout_strategy_thrift,
+            containerConfig=self.container_config.to_thrift() if self.container_config else None,
+            endpointConfig=self.endpoint_config.to_thrift() if self.endpoint_config else None,
+            resourceConfig=self.resource_config.to_thrift() if self.resource_config else None,
+            rolloutStrategy=self.rollout_strategy.to_thrift() if self.rollout_strategy else None,
         )
 
 
@@ -243,7 +204,7 @@ def Model(
         A Model object
     """
     # Get caller's filename to assign team
-    team = inspect.stack()[1].filename.split("/")[-2]
+    team = utils._get_team_from_caller()
 
     assert isinstance(version, str), f"Version must be a string, but found {type(version).__name__}"
 
@@ -256,37 +217,15 @@ def Model(
         version=version,
     )
 
-    # Convert inference_spec to thrift if provided
-    inference_spec_thrift = None
-    if inference_spec:
-        inference_spec_thrift = inference_spec.to_thrift()
-
-    # Create value schema if value_fields are provided
-    value_schema = None
-    if value_fields:
-        schema_name = "model_value_schema"
-        value_schema = DataType.STRUCT(schema_name, *value_fields)
-
-    # Convert training_conf to thrift if provided
-    training_conf_thrift = None
-    if training_conf:
-        training_conf_thrift = training_conf.to_thrift()
-
-    # Convert deployment_conf to thrift if provided
-    deployment_conf_thrift = None
-    if deployment_conf:
-        deployment_conf_thrift = deployment_conf.to_thrift()
-
-    # Create and return the Model object
     model = ttypes.Model(
         metaData=meta_data,
-        inferenceSpec=inference_spec_thrift,
+        inferenceSpec=inference_spec.to_thrift() if inference_spec else None,
         inputMapping=input_mapping,
         outputMapping=output_mapping,
-        valueSchema=value_schema,
+        valueSchema=DataType.STRUCT("model_value_schema", *value_fields) if value_fields else None,
         modelArtifactBaseUri=model_artifact_base_uri,
-        trainingConf=training_conf_thrift,
-        deploymentConf=deployment_conf_thrift,
+        trainingConf=training_conf.to_thrift() if training_conf else None,
+        deploymentConf=deployment_conf.to_thrift() if deployment_conf else None,
     )
 
     return model
@@ -296,12 +235,13 @@ def _get_model_transforms_output_table_name(
     model_transforms: ttypes.ModelTransforms, full_name: bool = False
 ):
     """Generate output table name for ModelTransforms"""
-    utils.__set_name(model_transforms, ttypes.ModelTransforms, "models")
-    return utils.output_table_name(model_transforms, full_name=full_name)
+    return utils._ensure_name_and_get_output_table(
+        model_transforms, ttypes.ModelTransforms, "models", full_name
+    )
 
 
 def ModelTransforms(
-    sources: List[ANY_SOURCE_TYPE],
+    sources: Sequence[ANY_SOURCE_TYPE],
     models: List[ttypes.Model],
     version: int,
     passthrough_fields: Optional[List[str]] = None,
@@ -329,7 +269,7 @@ def ModelTransforms(
      - tags: Additional metadata tags
     """
     # Get caller's filename to assign team
-    team = inspect.stack()[1].filename.split("/")[-2]
+    team = utils._get_team_from_caller()
 
     # Set names for Model objects if they don't have names yet
     if models:
@@ -338,7 +278,7 @@ def ModelTransforms(
                 utils.__set_name(model, ttypes.Model, "models")
 
     # Normalize all sources to ensure they are properly wrapped
-    normalized_sources = [normalize_source(source) for source in sources]
+    normalized_sources = normalize_sources(sources)
 
     # Create metadata
     meta_data = ttypes.MetaData(
@@ -349,18 +289,12 @@ def ModelTransforms(
         version=str(version),
     )
 
-    # Create key schema if key_fields are provided
-    key_schema = None
-    if key_fields:
-        schema_name = "modeltransform_key_schema"
-        key_schema = DataType.STRUCT(schema_name, *key_fields)
-
     model_transforms = ttypes.ModelTransforms(
         sources=normalized_sources,
         models=models,
         passthroughFields=passthrough_fields,
         metaData=meta_data,
-        keySchema=key_schema,
+        keySchema=DataType.STRUCT("modeltransform_key_schema", *key_fields) if key_fields else None,
     )
 
     # Add the table property for output table name generation

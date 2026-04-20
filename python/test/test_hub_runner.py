@@ -11,12 +11,14 @@
 #     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
+import pytest
 from unittest.mock import patch
 
 from click.testing import CliRunner
 from rich.text import Text
 
-from ai.chronon.repo.hub_runner import hub
+from ai.chronon.cli.formatter import Format
+from ai.chronon.repo.hub_runner import hub, redeploy_streaming
 
 
 def _plain(text: str) -> str:
@@ -553,3 +555,187 @@ class TestHubRunner:
 
         # Verify call_schedule_all_api was NOT called since all confs have no schedules
         mock_hub_instance.call_schedule_all_api.assert_not_called()
+
+    @patch('requests.post')
+    @patch('ai.chronon.repo.hub_runner.get_current_branch')
+    @patch('ai.chronon.repo.hub_uploader.compute_and_upload_diffs')
+    @patch('ai.chronon.repo.hub_uploader.build_local_repo_hashmap')
+    def test_redeploy_streaming_success(
+        self,
+        mock_build_hashmap,
+        mock_upload_diffs,
+        mock_get_current_branch,
+        mock_post,
+        canary,
+    ):
+        """Test redeploy_streaming syncs confs and calls the redeploy API."""
+        mock_get_current_branch.return_value = "main"
+        mock_build_hashmap.return_value = {}
+        mock_upload_diffs.return_value = []
+        mock_post.return_value.json.return_value = {
+            "results": [
+                {"metadataName": "aws.dim_listings.v1__0", "success": True, "message": "Redeploy initiated"},
+            ],
+            "totalCount": 1,
+            "successCount": 1,
+            "failureCount": 0,
+        }
+        mock_post.return_value.raise_for_status.return_value = None
+
+        redeploy_streaming(
+            repo=canary,
+            confs=["compiled/group_bys/aws/dim_listings.v1__0"],
+            use_auth=False,
+        )
+
+        mock_build_hashmap.assert_called_once_with(root_dir=canary)
+        mock_upload_diffs.assert_called_once()
+        mock_post.assert_called_once()
+        url = mock_post.call_args[0][0]
+        assert "/streaming/v1/redeploy" in url
+        body = mock_post.call_args[1]["json"]
+        assert body["metadataNames"] == ["aws.dim_listings.v1__0"]
+
+    @patch('requests.post')
+    @patch('ai.chronon.repo.hub_runner.get_current_branch')
+    @patch('ai.chronon.repo.hub_uploader.compute_and_upload_diffs')
+    @patch('ai.chronon.repo.hub_uploader.build_local_repo_hashmap')
+    def test_redeploy_streaming_multiple_confs(
+        self,
+        mock_build_hashmap,
+        mock_upload_diffs,
+        mock_get_current_branch,
+        mock_post,
+        canary,
+    ):
+        """Test redeploy_streaming with multiple confs passes all metadata names."""
+        mock_get_current_branch.return_value = "main"
+        mock_build_hashmap.return_value = {}
+        mock_upload_diffs.return_value = []
+        mock_post.return_value.json.return_value = {
+            "results": [
+                {"metadataName": "aws.dim_listings.v1__0", "success": True, "message": "Redeploy initiated"},
+                {"metadataName": "aws.dim_merchants.v1__0", "success": True, "message": "Redeploy initiated"},
+            ],
+            "totalCount": 2,
+            "successCount": 2,
+            "failureCount": 0,
+        }
+        mock_post.return_value.raise_for_status.return_value = None
+
+        redeploy_streaming(
+            repo=canary,
+            confs=[
+                "compiled/group_bys/aws/dim_listings.v1__0",
+                "compiled/group_bys/aws/dim_merchants.v1__0",
+            ],
+            use_auth=False,
+        )
+
+        body = mock_post.call_args[1]["json"]
+        assert set(body["metadataNames"]) == {"aws.dim_listings.v1__0", "aws.dim_merchants.v1__0"}
+
+    @patch('requests.post')
+    @patch('ai.chronon.repo.hub_runner.get_current_branch')
+    @patch('ai.chronon.repo.hub_uploader.compute_and_upload_diffs')
+    @patch('ai.chronon.repo.hub_uploader.build_local_repo_hashmap')
+    def test_redeploy_streaming_sync_called_before_api(
+        self,
+        mock_build_hashmap,
+        mock_upload_diffs,
+        mock_get_current_branch,
+        mock_post,
+        canary,
+    ):
+        """Test that sync happens before the redeploy API call."""
+        call_order = []
+        mock_get_current_branch.return_value = "main"
+        mock_build_hashmap.side_effect = lambda **_: call_order.append("build_hashmap") or {}
+        mock_upload_diffs.side_effect = lambda *a, **kw: call_order.append("upload_diffs")
+        mock_post.return_value.json.return_value = {
+            "results": [], "totalCount": 0, "successCount": 0, "failureCount": 0,
+        }
+        mock_post.return_value.raise_for_status.return_value = None
+        mock_post.side_effect = lambda *a, **kw: call_order.append("api_call") or mock_post.return_value
+
+        redeploy_streaming(
+            repo=canary,
+            confs=["compiled/group_bys/aws/dim_listings.v1__0"],
+            use_auth=False,
+        )
+
+        assert call_order.index("build_hashmap") < call_order.index("upload_diffs")
+        assert call_order.index("upload_diffs") < call_order.index("api_call")
+
+    @patch('requests.post')
+    @patch('ai.chronon.repo.hub_runner.get_current_branch')
+    @patch('ai.chronon.repo.hub_uploader.compute_and_upload_diffs')
+    @patch('ai.chronon.repo.hub_uploader.build_local_repo_hashmap')
+    def test_redeploy_streaming_exits_nonzero_on_failure(
+        self,
+        mock_build_hashmap,
+        mock_upload_diffs,
+        mock_get_current_branch,
+        mock_post,
+        canary,
+    ):
+        """Test that redeploy_streaming exits with code 1 when failureCount > 0."""
+        mock_get_current_branch.return_value = "main"
+        mock_build_hashmap.return_value = {}
+        mock_upload_diffs.return_value = []
+        mock_post.return_value.json.return_value = {
+            "results": [
+                {"metadataName": "aws.dim_listings.v1__0", "success": True, "message": "Redeploy initiated"},
+                {"metadataName": "aws.dim_merchants.v1__0", "success": False, "message": "Job not found"},
+            ],
+            "totalCount": 2,
+            "successCount": 1,
+            "failureCount": 1,
+        }
+        mock_post.return_value.raise_for_status.return_value = None
+
+        with pytest.raises(SystemExit) as exc_info:
+            redeploy_streaming(
+                repo=canary,
+                confs=[
+                    "compiled/group_bys/aws/dim_listings.v1__0",
+                    "compiled/group_bys/aws/dim_merchants.v1__0",
+                ],
+                use_auth=False,
+            )
+        assert exc_info.value.code == 1
+
+    @patch('requests.post')
+    @patch('ai.chronon.repo.hub_runner.get_current_branch')
+    @patch('ai.chronon.repo.hub_uploader.compute_and_upload_diffs')
+    @patch('ai.chronon.repo.hub_uploader.build_local_repo_hashmap')
+    def test_redeploy_streaming_json_exits_nonzero_on_failure(
+        self,
+        mock_build_hashmap,
+        mock_upload_diffs,
+        mock_get_current_branch,
+        mock_post,
+        canary,
+    ):
+        """Test that redeploy_streaming exits with code 1 in JSON format when failureCount > 0."""
+        mock_get_current_branch.return_value = "main"
+        mock_build_hashmap.return_value = {}
+        mock_upload_diffs.return_value = []
+        mock_post.return_value.json.return_value = {
+            "results": [
+                {"metadataName": "aws.dim_listings.v1__0", "success": False, "message": "Timeout"},
+            ],
+            "totalCount": 1,
+            "successCount": 0,
+            "failureCount": 1,
+        }
+        mock_post.return_value.raise_for_status.return_value = None
+
+        with pytest.raises(SystemExit) as exc_info:
+            redeploy_streaming(
+                repo=canary,
+                confs=["compiled/group_bys/aws/dim_listings.v1__0"],
+                use_auth=False,
+                format=Format.JSON,
+            )
+        assert exc_info.value.code == 1

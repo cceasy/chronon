@@ -5,9 +5,7 @@ The schema table provides the latest schema based on the schema hash (stored in 
 This implementation assumes a pubsub bigQuery subscription to create the loggable_response table.
 The fields are stored as bytes and such the schema can be decoded by casting to string.
 """
-from ai.chronon.group_by import GroupBy, Aggregation, Operation, Accuracy
-from ai.chronon.source import EventSource
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Accuracy, Aggregation, EventSource, GroupBy, Operation, Query, selects
 import staging_queries.aws.partitioned_logging as partitioned_logging
 
 source = EventSource(

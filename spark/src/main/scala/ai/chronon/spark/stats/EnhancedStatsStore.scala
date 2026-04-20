@@ -19,7 +19,7 @@ package ai.chronon.spark.stats
 import ai.chronon.aggregator.row.{RowAggregator, StatsGenerator}
 import ai.chronon.api
 import ai.chronon.api.{Constants, SerdeUtils, StringType, StructType}
-import ai.chronon.online.{Api, KVStore}
+import ai.chronon.online.{Api, JavaStatsService, KVStore}
 import ai.chronon.online.KVStore.{GetRequest, PutRequest}
 import ai.chronon.online.serde.{AvroCodec, AvroConversions}
 import ai.chronon.spark.catalog.TableUtils
@@ -46,13 +46,20 @@ import scala.util.{Failure, Success}
   * @param api The API instance for accessing KV stores
   * @param tableBaseName The base table name for the BigTable enhanced stats table (default: "ENHANCED_STATS")
   * @param datasetName The dataset name within the KV store (default: Constants.EnhancedStatsDataset)
+  * @param semanticHash If set, all keys are prefixed with "<hash>/" to isolate data by config version.
+  *                     Jobs with different join configs (different hashes) write to separate shards and
+  *                     cannot overwrite each other's data.
   */
 class EnhancedStatsStore(api: Api,
                          tableBaseName: String = "ENHANCED_STATS",
-                         datasetName: String = Constants.EnhancedStatsDataset)(implicit tu: TableUtils)
+                         datasetName: String = Constants.EnhancedStatsDataset,
+                         semanticHash: Option[String] = None)(implicit tu: TableUtils)
     extends Serializable {
 
   @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
+
+  private def prefixWithHash(keyBytes: Array[Byte]): Array[Byte] =
+    JavaStatsService.prefixWithHash(semanticHash, keyBytes)
 
   // Use the specialized enhanced stats KV store for efficient BigTable time-series operations
   @transient lazy val kvStore: KVStore = api.genEnhancedStatsKvStore(tableBaseName)
@@ -106,7 +113,8 @@ class EnhancedStatsStore(api: Api,
         logger.warn(s"Row $idx has NULL key_bytes - skipping")
         None
       } else {
-        val keyBytes = row.getAs[Array[Byte]](keyIndex)
+        val rawKeyBytes = row.getAs[Array[Byte]](keyIndex)
+        val keyBytes = prefixWithHash(rawKeyBytes)
         val valueBytes = if (row.isNullAt(valueIndex)) Array.empty[Byte] else row.getAs[Array[Byte]](valueIndex)
         val timestamp =
           if (timestampIndex < 0 || row.isNullAt(timestampIndex)) None

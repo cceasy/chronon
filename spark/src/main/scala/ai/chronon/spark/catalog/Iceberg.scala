@@ -36,8 +36,12 @@ case object Iceberg extends Format {
 
     Try(getIcebergPartitions(tableName, partitionColumn)) match {
       case Success(p) => p
-      case Failure(e) =>
+      case Failure(e) if Option(e.getMessage).exists(_.contains("TABLE_OR_VIEW_NOT_FOUND")) =>
         logger.warn(s"Failed to get partitions for $tableName: ${e.getMessage}")
+        List.empty
+      case Failure(e) =>
+        logger.warn(
+          s"Failed to get partitions for $tableName: ${e.getClass.getSimpleName}: ${Option(e.getMessage).getOrElse("(no message)")}")
         List.empty
     }
   }
@@ -62,6 +66,16 @@ case object Iceberg extends Format {
       .distinct
   }
 
+  /** Returns the partition column names from the Iceberg partition spec. Empty if unpartitioned.
+    * todo(tchow): Find a more permanent home for this as we always write Iceberg and this doesn't make much sense
+    * for other formats.
+    */
+  def partitionColumnNames(tableName: String)(implicit sparkSession: SparkSession): Array[String] = {
+    val partitionsDf = sparkSession.table(s"${qualifyWithCatalog(tableName)}.partitions")
+    val index = partitionsDf.schema.fieldIndex("partition")
+    partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames
+  }
+
   private def getIcebergPartitions(tableName: String, partitionColumn: String)(implicit
       sparkSession: SparkSession): List[String] = {
 
@@ -75,13 +89,13 @@ case object Iceberg extends Format {
         .select(col(s"partition.$partitionColumn"), col("partition.hr"))
         .collect()
         .filter(_.get(1) == null)
-        .map(_.getString(0))
+        .flatMap(row => Option(row.getString(0)))
         .toList
     } else {
       partitionsDf
         .select(col(s"partition.$partitionColumn").cast("string"))
         .collect()
-        .map(_.getString(0))
+        .flatMap(row => Option(row.getString(0)))
         .toList
     }
   }

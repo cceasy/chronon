@@ -1,8 +1,7 @@
 from gen_thrift.api.ttypes import JoinSource, Source
 from joins.risk import user_transactions
 
-from ai.chronon.model import Model, ModelBackend, InferenceSpec, ModelTransforms
-from ai.chronon.query import Query, selects
+from ai.chronon.types import InferenceSpec, Model, ModelBackend, ModelTransforms, Query, selects
 
 """
 This is the "left side" of the join that will comprise our training set. It is responsible for providing the primary keys

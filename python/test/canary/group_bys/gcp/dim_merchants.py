@@ -1,8 +1,6 @@
 from staging_queries.gcp import exports
 
-from ai.chronon.group_by import GroupBy
-from ai.chronon.query import Query, selects
-from ai.chronon.source import EntitySource
+from ai.chronon.types import EntitySource, GroupBy, Query, selects
 
 """
 This GroupBy creates a simple passthrough transformation on the dim_listings table.

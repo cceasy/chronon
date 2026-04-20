@@ -2,14 +2,26 @@
 
 Usage::
 
-    # Run all integration tests:
+    # Run all integration tests (using ZIPLINE_TOKEN — service principal):
+    ZIPLINE_TOKEN=<session_token> \\
+        ZIPLINE_AUTH_URL=https://canary.zipline.ai \\
+        HUB_URL=https://canary-orch.zipline.ai \\
+        ./mill python.test_integration
+
+    # Run all integration tests (using ZIPLINE_TOKEN — quick JWT):
+    ZIPLINE_TOKEN=$(zipline auth get-access-token) \\
+        HUB_URL=https://canary-orch.zipline.ai \\
+        ./mill python.test_integration
+
+    # Run all integration tests (using cloud IAM token):
     GCP_ID_TOKEN=$(gcloud auth print-identity-token) \\
         HUB_URL=https://canary-orch.zipline.ai \\
         ./mill python.test_integration
 
     # Run a specific test:
     PYTEST_ADDOPTS="-k test_backfill_no_data" \\
-        GCP_ID_TOKEN=$(gcloud auth print-identity-token) \\
+        ZIPLINE_TOKEN=<token> \\
+        ZIPLINE_AUTH_URL=https://canary.zipline.ai \\
         HUB_URL=https://canary-orch.zipline.ai \\
         ./mill python.test_integration
 """
@@ -72,18 +84,10 @@ def chronon_root() -> str:
 # Per-test fixtures
 # ---------------------------------------------------------------------------
 
-ARTIFACT_PREFIXES = {
-    "gcp": "gs://zipline-artifacts-canary",
-    "aws": "s3://zipline-artifacts-canary",
-    "azure": "abfss://zipline-artifacts-canary",
-}
-
-
 @pytest.fixture(autouse=True)
 def chronon_env(monkeypatch, chronon_root, cloud):
     """Set up the environment variables and sys.path needed by canary configs."""
     monkeypatch.setenv("PYTHONPATH", chronon_root)
-    monkeypatch.setenv("ARTIFACT_PREFIX", ARTIFACT_PREFIXES[cloud])
     monkeypatch.setenv("CUSTOMER_ID", "canary")
     monkeypatch.syspath_prepend(chronon_root)
 
@@ -93,8 +97,8 @@ def _random_suffix(length: int = 8) -> str:
 
 
 @pytest.fixture
-def confs(test_id, cloud) -> dict[str, str]:
-    """Compiled conf paths keyed by logical name, resolved with the current test_id."""
+def confs(test_id, cloud):
+    """Callable that resolves logical conf paths to test-scoped paths."""
     return get_confs(cloud, test_id)
 
 

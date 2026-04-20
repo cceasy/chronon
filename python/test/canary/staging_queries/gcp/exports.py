@@ -1,4 +1,4 @@
-from ai.chronon.staging_query import EngineType, StagingQuery, TableDependency
+from ai.chronon.types import EngineType, StagingQuery, TableDependency
 
 
 def get_select_star_export(table: str, partition_column: str = "_PARTITIONTIME"):

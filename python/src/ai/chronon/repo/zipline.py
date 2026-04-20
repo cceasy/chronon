@@ -5,6 +5,7 @@ import click
 
 from ai.chronon.repo import utils
 from ai.chronon.repo.admin import admin
+from ai.chronon.repo.auth import auth
 from ai.chronon.repo.compile import compile
 from ai.chronon.repo.hub_runner import hub
 from ai.chronon.repo.init import main as init_cmd
@@ -25,6 +26,7 @@ def zipline(ctx):
     ctx.obj["version"] = utils.get_package_version()
 
 
+zipline.add_command(auth)
 zipline.add_command(compile)
 zipline.add_command(run_main)
 zipline.add_command(hub)

@@ -1,4 +1,4 @@
-from ai.chronon.staging_query import StagingQuery, TableDependency
+from ai.chronon.types import StagingQuery, TableDependency
 
 # Simple staging query reading from demo-v2.data.test_connection
 simple = StagingQuery(

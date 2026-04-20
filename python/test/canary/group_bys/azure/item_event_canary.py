@@ -1,8 +1,5 @@
-from gen_thrift.api.ttypes import EventSource, Source
-
-from ai.chronon.group_by import Aggregation, GroupBy, Operation
-from ai.chronon.query import Query, selects
-from ai.chronon.types import ConfigProperties, EnvironmentVariables
+from ai.chronon.types import Aggregation, EventSource, GroupBy, Operation, Query, selects
+from ai.chronon.types import ConfigProperties, EnvironmentVariables, Source
 
 _action_events = [
     "backend_add_to_cart",
@@ -14,24 +11,22 @@ _action_events_csv = ", ".join([f"'{event}'" for event in _action_events])
 _action_events_filter = f"event_type in ({_action_events_csv})"
 
 def build_source(topic: str) -> Source:
-    return Source(
-        events=EventSource(
-            # This source table contains a custom struct ('attributes') that enables
-            # attributes['key'] style access pattern in a BQ native table.
-            table="data.item_events_parquet_compat_partitioned",
-            topic=topic,
-            query=Query(
-                selects=selects(
-                    listing_id="EXPLODE(TRANSFORM(SPLIT(COALESCE(attributes['sold_listing_ids'], attributes['listing_id']), ','), e -> CAST(e AS LONG)))",
-                    add_cart="IF(event_type = 'backend_add_to_cart', 1, 0)",
-                    view="IF(event_type = 'view_listing', 1, 0)",
-                    purchase="IF(event_type = 'backend_cart_payment', 1, 0)",
-                    favorite="IF(event_type = 'backend_favorite_item2', 1, 0)",
-                ),
-                wheres=[_action_events_filter],
-                time_column="timestamp",
+    return EventSource(
+        # This source table contains a custom struct ('attributes') that enables
+        # attributes['key'] style access pattern in a BQ native table.
+        table="data.item_events_parquet_compat_partitioned",
+        topic=topic,
+        query=Query(
+            selects=selects(
+                listing_id="EXPLODE(TRANSFORM(SPLIT(COALESCE(attributes['sold_listing_ids'], attributes['listing_id']), ','), e -> CAST(e AS LONG)))",
+                add_cart="IF(event_type = 'backend_add_to_cart', 1, 0)",
+                view="IF(event_type = 'view_listing', 1, 0)",
+                purchase="IF(event_type = 'backend_cart_payment', 1, 0)",
+                favorite="IF(event_type = 'backend_favorite_item2', 1, 0)",
             ),
-        )
+            wheres=[_action_events_filter],
+            time_column="timestamp",
+        ),
     )
 
 def build_actions_groupby(source: Source) -> GroupBy:

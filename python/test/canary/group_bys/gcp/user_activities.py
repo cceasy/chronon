@@ -1,8 +1,6 @@
-from gen_thrift.api.ttypes import EventSource, Source
 from staging_queries.gcp import exports
 
-from ai.chronon.group_by import Aggregation, GroupBy, Operation, TimeUnit, Window
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Aggregation, EventSource, GroupBy, Operation, Query, TimeUnit, Window, selects
 from ai.chronon.types import EnvironmentVariables
 
 """
@@ -11,12 +9,11 @@ It tracks various user behaviors (views, clicks, purchases, favorites, add_to_ca
 with last_k, sum, and average aggregations over multiple time windows.
 """
 
-source = Source(
-    events=EventSource(
-        # This will be the BigQuery table that receives the PubSub data
-        table=exports.user_activities.table,
-        topic="pubsub://user-activities-v2/project=canary-443022/subscription=user-activities-v2-sub/serde=pubsub_schema/schemaId=user-activities",
-        query=Query(
+source = EventSource(
+    # This will be the BigQuery table that receives the PubSub data
+    table=exports.user_activities.table,
+    topic="pubsub://user-activities-v2/project=canary-443022/subscription=user-activities-v2-sub/serde=pubsub_schema/schemaId=user-activities",
+    query=Query(
             selects=selects(
                 user_id="user_id",
                 listing_id="listing_id",
@@ -34,8 +31,7 @@ source = Source(
                 user_event_struct="STRUCT(event_type, listing_id, unix_millis(TIMESTAMP(event_time_ms)) as timestamp)",
             ),
             time_column="unix_millis(TIMESTAMP(event_time_ms))",
-        ),
-    )
+    ),
 )
 
 # Define window sizes for aggregations (1d, 7d, 14d, 30d)

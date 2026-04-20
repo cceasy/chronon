@@ -13,7 +13,7 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
 
   // Versions force-overridden to fix CVEs from uber-jar transitive deps.
   // Also used by patchAssemblyMetadata to write correct pom.properties.
-  private val jettyVersion = "12.0.32"
+  private val jettyVersion = build.Constants.jettyVersion
   private val avroVersion = build.Constants.avroVersion
   private val nimbusJoseJwtVersion = "9.37.4"
   // Azure Cosmos SDK requires Jackson >= 2.17.2; use 2.18.6 to fix GHSA-72hv-8253-57qq.
@@ -73,8 +73,9 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
     mvn"com.fasterxml.jackson.module::jackson-module-scala:$jacksonVersion",
     mvn"com.fasterxml.jackson.datatype:jackson-datatype-jsr310:$jacksonVersion",
     // Reactor and Netty dependencies required by Cosmos SDK's internal ReactorNettyClient
-    // (used even in Gateway mode). Force versions compatible with azure-cosmos 4.76.0.
-    mvn"io.netty:netty-all:4.1.118.Final",
+    // (used even in Gateway mode). 4.1.132.Final is compatible with azure-cosmos 4.76.0
+    // (which requires reactor-netty 1.2.13, itself built against 4.1.128.Final).
+    mvn"io.netty:netty-all:4.1.132.Final",
     mvn"io.projectreactor:reactor-core:3.6.11",
     mvn"io.projectreactor.netty:reactor-netty-core:1.2.13",
     mvn"io.projectreactor.netty:reactor-netty-http:1.2.13",

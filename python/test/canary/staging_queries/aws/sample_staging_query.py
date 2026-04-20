@@ -1,6 +1,6 @@
 from joins.aws import training_set
 
-from ai.chronon.staging_query import EngineType, StagingQuery, TableDependency
+from ai.chronon.types import EngineType, StagingQuery, TableDependency
 
 
 def get_staging_query(category_name):
@@ -19,7 +19,7 @@ def get_staging_query(category_name):
             TableDependency(table=training_set.v1_test.table, partition_column="ds", offset=1)
         ],
         version=0,
-        step_days=30,
+        step_days=10,
     )
 
 cart = get_staging_query("cart")
@@ -51,7 +51,7 @@ terminal = StagingQuery(
         TableDependency(table=shipping.table, partition_column="ds", offset=1),
     ],
     version=0,
-    step_days=30,
+    step_days=10,
 )
 
 purchases_labels = StagingQuery(
@@ -68,7 +68,7 @@ WHERE ds BETWEEN {{{{ start_date }}}} AND {{{{ end_date }}}}
         TableDependency(table=training_set.v1_test.table, partition_column="ds", offset=0),
     ],
     version=0,
-    step_days=30,
+    step_days=10,
 )
 
 query_hub = f"""
@@ -86,7 +86,7 @@ v1_hub = StagingQuery(
         TableDependency(table=training_set.v1_hub.table, partition_column="ds", offset=1)
     ],
     version=0,
-    step_days=30,
+    step_days=10,
 )
 
 bigquery_import_query = f"""
@@ -104,5 +104,5 @@ v1_bigquery_import = StagingQuery(
         TableDependency(table=training_set.v1_hub.table, partition_column="ds", offset=0)
     ],
     version=0,
-    step_days=30,
+    step_days=10,
 )

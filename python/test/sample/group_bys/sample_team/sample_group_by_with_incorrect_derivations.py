@@ -15,7 +15,7 @@
 
 from sources import sample_sources
 
-from ai.chronon.group_by import Aggregation, Derivation, GroupBy, Operation
+from ai.chronon.types import Aggregation, Derivation, GroupBy, Operation
 
 v1 = GroupBy(
     sources=sample_sources.staging_entities,

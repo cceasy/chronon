@@ -46,13 +46,25 @@ class JavaStatsService(api: Api,
   // Use the specialized enhanced stats KV store for efficient BigTable time-series operations
   @transient lazy val kvStore: KVStore = api.genEnhancedStatsKvStore(tableBaseName)
 
+  // Must be explicitly enabled via env var — prevents accidental use of sharding before jobs have
+  // been re-run with CHRONON_SHARD_ENHANCED_STATS enabled on the write side.
+  private val shardingEnabled: Boolean =
+    sys.env.getOrElse("CHRONON_SHARD_ENHANCED_STATS", "false").equalsIgnoreCase("true")
+
   /** Helper to retrieve both key and value schemas from KV Store in a single batch call */
   private def getSchemasFromKVStore(keySchemaKey: String,
-                                    valueSchemaKey: String): (Option[AvroCodec], Option[AvroCodec]) = {
+                                    valueSchemaKey: String,
+                                    semanticHash: Option[String]): (Option[AvroCodec], Option[AvroCodec]) = {
     try {
       val requests = Seq(
-        GetRequest(keySchemaKey.getBytes(charset), datasetName, None, None),
-        GetRequest(valueSchemaKey.getBytes(charset), datasetName, None, None)
+        GetRequest(JavaStatsService.prefixWithHash(semanticHash, keySchemaKey.getBytes(charset)),
+                   datasetName,
+                   None,
+                   None),
+        GetRequest(JavaStatsService.prefixWithHash(semanticHash, valueSchemaKey.getBytes(charset)),
+                   datasetName,
+                   None,
+                   None)
       )
 
       val responses = Await.result(
@@ -62,9 +74,9 @@ class JavaStatsService(api: Api,
 
       val keyCodecOpt = responses(0).values match {
         case Success(values) if values.nonEmpty =>
-          // Use the most recent schema (last in the list)
-          val schemaString = new String(values.last.bytes, charset)
-          logger.info(s"Successfully found schema: $keySchemaKey (version: latest of ${values.size})")
+          val freshest = values.zipWithIndex.maxBy { case (tv, i) => (tv.millis, i) }._1
+          val schemaString = new String(freshest.bytes, charset)
+          logger.info(s"Successfully found schema: $keySchemaKey (ts=${freshest.millis}, versions=${values.size})")
           Some(new AvroCodec(schemaString))
         case _ =>
           logger.warn(s"Schema not found for key: $keySchemaKey")
@@ -73,9 +85,9 @@ class JavaStatsService(api: Api,
 
       val valueCodecOpt = responses(1).values match {
         case Success(values) if values.nonEmpty =>
-          // Use the most recent schema (last in the list)
-          val schemaString = new String(values.last.bytes, charset)
-          logger.info(s"Successfully found schema: $valueSchemaKey (version: latest of ${values.size})")
+          val freshest = values.zipWithIndex.maxBy { case (tv, i) => (tv.millis, i) }._1
+          val schemaString = new String(freshest.bytes, charset)
+          logger.info(s"Successfully found schema: $valueSchemaKey (ts=${freshest.millis}, versions=${values.size})")
           Some(new AvroCodec(schemaString))
         case _ =>
           logger.warn(s"Schema not found for key: $valueSchemaKey")
@@ -95,11 +107,28 @@ class JavaStatsService(api: Api,
     * @param tableName The name of the table (used as key in KV store)
     * @param startTimeMillis Start of time range (inclusive)
     * @param endTimeMillis End of time range (inclusive)
+    * @param semanticHash If set, reads from the shard written by the job with this config hash.
+    *                     Pass null (Java) or None (Scala) to read un-sharded legacy data.
     * @return CompletableFuture of JavaStatsResponse with statistics or error
     */
   def fetchStats(tableName: String,
                  startTimeMillis: Long,
-                 endTimeMillis: Long): CompletableFuture[JavaStatsResponse] = {
+                 endTimeMillis: Long,
+                 semanticHash: String): CompletableFuture[JavaStatsResponse] = {
+
+    val requestedHash = Option(semanticHash)
+    // When the flag is off, drop any hash the caller passed and read un-sharded data.
+    // Log a warning so the frontend knows the hash was ignored rather than silently failing.
+    val maybeHash = if (shardingEnabled) {
+      requestedHash
+    } else {
+      requestedHash.foreach { h =>
+        logger.warn(
+          s"[$tableName] semanticHash=$h was passed but CHRONON_SHARD_ENHANCED_STATS is not enabled — " +
+            s"ignoring hash and reading un-sharded data. Enable the flag or remove semanticHash from the request.")
+      }
+      None
+    }
 
     val scalaFuture: Future[JavaStatsResponse] = Future {
       Try {
@@ -107,10 +136,16 @@ class JavaStatsService(api: Api,
         val keySchemaKey = s"$tableName${Constants.TimedKvRDDKeySchemaKey}"
         val valueSchemaKey = s"$tableName${Constants.TimedKvRDDValueSchemaKey}"
 
-        val (keyCodecOpt, valueCodecOpt) = getSchemasFromKVStore(keySchemaKey, valueSchemaKey)
+        val (keyCodecOpt, valueCodecOpt) = getSchemasFromKVStore(keySchemaKey, valueSchemaKey, maybeHash)
 
         if (keyCodecOpt.isEmpty || valueCodecOpt.isEmpty) {
-          throw new RuntimeException(s"Failed to retrieve schemas for $tableName. Has it been uploaded?")
+          val hashHint = maybeHash match {
+            case Some(h) =>
+              s" with semanticHash=$h. The stats job may not have been run yet with CHRONON_SHARD_ENHANCED_STATS enabled"
+            case None =>
+              " (no semanticHash — reading un-sharded data)"
+          }
+          throw new RuntimeException(s"Failed to retrieve schemas for $tableName$hashHint. Has it been uploaded?")
         }
 
         val keyCodec = keyCodecOpt.get
@@ -121,7 +156,7 @@ class JavaStatsService(api: Api,
         val record = AvroConversions
           .fromChrononRow(chrononRow, keyCodec.chrononSchema, keyCodec.schema)
           .asInstanceOf[generic.GenericData.Record]
-        val keyBytes = keyCodec.encodeBinary(record)
+        val keyBytes = JavaStatsService.prefixWithHash(maybeHash, keyCodec.encodeBinary(record))
 
         val getRequest = GetRequest(
           keyBytes,
@@ -145,8 +180,8 @@ class JavaStatsService(api: Api,
               logger.info(s"Fetched ${timedValues.size} tiles for $tableName")
 
               // Fetch schemas (these are static metadata)
-              val selectedSchemaOpt = getMetadataValue(s"$tableName/selectedSchema", None)
-              val noKeysSchemaOpt = getMetadataValue(s"$tableName/noKeysSchema", None)
+              val selectedSchemaOpt = getMetadataValue(s"$tableName/selectedSchema", None, maybeHash)
+              val noKeysSchemaOpt = getMetadataValue(s"$tableName/noKeysSchema", None, maybeHash)
 
               if (selectedSchemaOpt.isEmpty || noKeysSchemaOpt.isEmpty) {
                 throw new RuntimeException(s"Failed to retrieve schemas for $tableName. Metadata may be missing.")
@@ -159,7 +194,7 @@ class JavaStatsService(api: Api,
               val noKeysSchema = noKeysSchemaCodec.chrononSchema.asInstanceOf[StructType]
 
               // Fallback: try to get from metadata row (backward compatibility)
-              val cardinalityMapOpt = getMetadataValue(s"$tableName/cardinalityMap", Some(endTimeMillis))
+              val cardinalityMapOpt = getMetadataValue(s"$tableName/cardinalityMap", Some(endTimeMillis), maybeHash)
               val mergedCardinalityMap = if (cardinalityMapOpt.isDefined) {
                 val cardinalityJson = cardinalityMapOpt.get
                 cardinalityJson
@@ -186,44 +221,54 @@ class JavaStatsService(api: Api,
                 mergedCardinalityMap,
                 cardinalityThreshold = 100
               )
-              val aggregator = StatsGenerator.buildAggregator(enhancedMetrics, selectedSchema)
 
-              // Merge all IRs after denormalizing (converts bytes back to sketch objects)
-              // Skip tiles that fail to decode due to schema evolution
+              // Filter metrics to only those whose inputColumn exists in selectedSchema.
+              // The stored selectedSchema is the source of truth — it reflects what was actually computed
+              // and stored in the tiles. Metrics referencing columns not present there correspond to newer
+              // code logic (e.g., __str variants added after the last stats job run) that we simply can't
+              // serve yet. We warn and degrade gracefully rather than failing the request entirely.
+              val selectedSchemaColumns = selectedSchema.fields.map(_.name).toSet
+              val (compatibleMetrics, skippedMetrics) = enhancedMetrics.partition { m =>
+                selectedSchemaColumns.contains(s"${m.name}${m.suffix}")
+              }
+              if (skippedMetrics.nonEmpty) {
+                val skippedCols = skippedMetrics.map(m => s"${m.name}${m.suffix}").distinct
+                logger.warn(
+                  s"[$tableName] ${skippedCols.size} metric input columns not found in stored selectedSchema " +
+                    s"(schema may predate recent code changes; re-run the stats job to get full metrics). " +
+                    s"Skipped: [${skippedCols.mkString(", ")}]"
+                )
+              }
+
+              val aggregator = StatsGenerator.buildAggregator(compatibleMetrics, selectedSchema)
+
+              // Merge all IRs after denormalizing (converts bytes back to sketch objects).
+              // Tiles that fail to decode (e.g. written with an older IR schema) are skipped with a warning.
               var successfulTiles = 0
               var skippedTiles = 0
+              val totalTiles = timedValues.size
               val mergedIr = timedValues.foldLeft(aggregator.init) { (acc, timedValue) =>
-                val result = Try {
-                  val irBytes = timedValue.bytes
-                  val normalizedIr = valueCodec.decodeRow(irBytes)
+                Try {
+                  val normalizedIr = valueCodec.decodeRow(timedValue.bytes)
                   val denormalizedIr = aggregator.denormalize(normalizedIr)
                   aggregator.merge(acc, denormalizedIr)
-                }
-
-                result match {
+                } match {
                   case Success(mergedResult) =>
                     successfulTiles += 1
                     mergedResult
                   case Failure(e) =>
                     skippedTiles += 1
                     if (skippedTiles <= 3) {
-                      // Log first few failures in detail to help debug
-                      logger.warn(s"Skipping tile due to schema mismatch: ${e.getClass.getSimpleName}: ${e.getMessage}")
+                      logger.warn(
+                        s"[$tableName] Skipping tile at ts=${timedValue.millis} " +
+                          s"(${e.getClass.getSimpleName}: ${e.getMessage})")
                     }
                     acc
                 }
               }
 
-              if (successfulTiles == 0) {
-                throw new RuntimeException(
-                  s"All $skippedTiles tiles failed to decode for $tableName. " +
-                    "This may indicate a complete schema incompatibility."
-                )
-              }
-
-              if (skippedTiles > 0) {
-                logger.info(s"Successfully decoded $successfulTiles tiles, skipped $skippedTiles incompatible tiles")
-              }
+              logger.info(
+                s"[$tableName] Tile decode summary: $successfulTiles/$totalTiles decoded, $skippedTiles skipped")
 
               // Finalize to get final statistics
               val normalized = aggregator.finalize(mergedIr)
@@ -271,9 +316,9 @@ class JavaStatsService(api: Api,
     try {
       // Fetch all three metadata values
       // cardinalityMap is time-dependent, fetch within time range to get the latest
-      val cardinalityMapOpt = getMetadataValue(cardinalityMapKey, endTimeMillis)
-      val selectedSchemaOpt = getMetadataValue(selectedSchemaKey, None)
-      val noKeysSchemaOpt = getMetadataValue(noKeysSchemaKey, None)
+      val cardinalityMapOpt = getMetadataValue(cardinalityMapKey, endTimeMillis, None)
+      val selectedSchemaOpt = getMetadataValue(selectedSchemaKey, None, None)
+      val noKeysSchemaOpt = getMetadataValue(noKeysSchemaKey, None, None)
 
       if (cardinalityMapOpt.isEmpty || selectedSchemaOpt.isEmpty || noKeysSchemaOpt.isEmpty) {
         logger.warn(s"Missing metadata for $tableName")
@@ -314,17 +359,24 @@ class JavaStatsService(api: Api,
     *
     * @param key The metadata key
     * @param endTimeMillis Optional end time for time-dependent metadata (gets latest value up to this time)
+    * @param semanticHash If set, prefixes the key to target the correct shard
     */
-  private def getMetadataValue(key: String, endTimeMillis: Option[Long]): Option[String] = {
+  private def getMetadataValue(key: String,
+                               endTimeMillis: Option[Long],
+                               semanticHash: Option[String]): Option[String] = {
     try {
+      val keyBytes = JavaStatsService.prefixWithHash(semanticHash, key.getBytes(charset))
       val response = Await.result(
-        kvStore.get(GetRequest(key.getBytes(charset), datasetName, None, endTimeMillis)),
+        kvStore.get(GetRequest(keyBytes, datasetName, None, endTimeMillis)),
         Duration(10L, TimeUnit.SECONDS)
       )
       response.values match {
         case Success(values) if values.nonEmpty =>
-          // Get the latest value (last one in the list since they're sorted by time)
-          Some(new String(values.last.bytes, charset))
+          // BigTable returns cells in descending timestamp order (newest first), but we use maxBy
+          // to be explicit and robust to any ordering differences across cell versions.
+          val freshest = values.zipWithIndex.maxBy { case (tv, i) => (tv.millis, i) }._1
+          logger.info(s"Using metadata for key: $key (ts=${freshest.millis}, versions=${values.size})")
+          Some(new String(freshest.bytes, charset))
         case _ =>
           logger.warn(s"Metadata not found for key: $key")
           None
@@ -356,10 +408,27 @@ class JavaStatsService(api: Api,
         cardinalityThreshold = 100 // Use the same threshold as during computation
       )
 
+      val selectedSchemaColumns = selectedSchema.fields.map(_.name).toSet
+      val (compatibleMetrics, skippedMetrics) = enhancedMetrics.partition { m =>
+        selectedSchemaColumns.contains(s"${m.name}${m.suffix}")
+      }
+      if (skippedMetrics.nonEmpty) {
+        val skippedCols = skippedMetrics.map(m => s"${m.name}${m.suffix}").distinct
+        logger.warn(
+          s"[$tableName] ${skippedCols.size} metric input columns not found in stored selectedSchema " +
+            s"(schema may predate recent code changes; re-run the stats job to get full metrics). " +
+            s"Skipped: [${skippedCols.mkString(", ")}]"
+        )
+      }
+
       // Build the aggregator with the reconstructed metrics
-      StatsGenerator.buildAggregator(enhancedMetrics, selectedSchema)
+      StatsGenerator.buildAggregator(compatibleMetrics, selectedSchema)
     }
   }
+
+  /** Overload for callers that don't use semantic-hash sharding (reads un-sharded legacy data). */
+  def fetchStats(tableName: String, startTimeMillis: Long, endTimeMillis: Long): CompletableFuture[JavaStatsResponse] =
+    fetchStats(tableName, startTimeMillis, endTimeMillis, null)
 
   /** Add derived features to the statistics map.
     * Computes additional metrics based on existing statistics:
@@ -402,6 +471,15 @@ class JavaStatsService(api: Api,
 
     enhanced
   }
+}
+
+object JavaStatsService {
+  private val charset = java.nio.charset.Charset.forName("UTF-8")
+
+  // Prepend "<hash>/" to key bytes when a semanticHash is provided, isolating data by config version.
+  // None = no prefix (backward compatible with data written before sharding was introduced).
+  def prefixWithHash(hash: Option[String], keyBytes: Array[Byte]): Array[Byte] =
+    hash.fold(keyBytes)(h => s"$h/".getBytes(charset) ++ keyBytes)
 }
 
 /** Java-friendly response object for stats queries

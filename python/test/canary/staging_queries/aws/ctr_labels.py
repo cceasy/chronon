@@ -1,6 +1,6 @@
 from joins.aws import demo
 
-from ai.chronon.staging_query import StagingQuery, TableDependency
+from ai.chronon.types import StagingQuery, TableDependency
 
 v1 = StagingQuery(
     query=f"""

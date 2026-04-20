@@ -10,7 +10,6 @@ import com.google.cloud.bigtable.data.v2.BigtableDataClient
 import com.google.cloud.bigtable.data.v2.models.{Filters, Query, RowMutation, TableId => BTTableId}
 import com.google.protobuf.ByteString
 import org.slf4j.{Logger, LoggerFactory}
-import org.threeten.bp.Duration
 
 import java.nio.charset.StandardCharsets
 import java.time.format.DateTimeFormatter
@@ -45,15 +44,12 @@ class BigTableMetricsKvStore(dataClient: BigtableDataClient,
 
   import BigTableMetricsKvStore._
 
-  // Keep data around for 90 days for data quality metrics
-  private val DataTTL = Duration.ofDays(90)
-
   // Cap the maximum number of cells we store per row
   private val MaxCellCount = 1000
 
-  // GC rules for data quality metrics table
+  // GC rules for data quality metrics table — no TTL, metrics should persist indefinitely
   private val DefaultGcRules =
-    GCRules.GCRULES.union().rule(GCRules.GCRULES.maxAge(DataTTL)).rule(GCRules.GCRULES.maxVersions(MaxCellCount))
+    GCRules.GCRULES.maxVersions(MaxCellCount)
 
   protected val metricsContext: Metrics.Context =
     Metrics.Context(Metrics.Environment.KVStore).withSuffix("data_quality_metrics")

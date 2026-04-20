@@ -179,3 +179,24 @@ jobs:
       - name: Run cloud aws tests
         run: |
           ./mill cloud_aws\[${{ env.SCALA_VERSION }}\].test
+
+  cloud_k8s_tests:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install curl
+        run: |
+          apt-get update && apt-get install -y curl
+
+      - name: Run cloud k8s tests
+        run: |
+          ./mill cloud_k8s\[${{ env.SCALA_VERSION }}\].test

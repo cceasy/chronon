@@ -1,6 +1,6 @@
 from joins.gcp import training_set
 
-from ai.chronon.staging_query import EngineType, StagingQuery, TableDependency
+from ai.chronon.types import EngineType, StagingQuery, TableDependency
 
 
 def get_staging_query(category_name):

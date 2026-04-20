@@ -1,0 +1,31 @@
+package build.cloud_k8s
+import mill.api._
+import mill.scalalib._
+import mill.scalalib.Assembly
+
+// Cloud K8s module - cloud-agnostic Flink-on-Kubernetes submission logic
+object `package` extends Cross[CloudK8sModule](build.Constants.scalaVersions) with CloudK8sModule {
+  // Provide default scala version for bracket-free access
+  override val crossValue = build.Constants.defaultScalaVersion
+}
+
+trait CloudK8sModule extends Cross.Module[String] with build.BaseModule {
+  def moduleDeps = Seq(build.spark(crossValue))
+
+  def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingApiDeps ++ build.Constants.utilityDeps ++ Seq(
+    mvn"io.fabric8:kubernetes-client:7.5.2"
+      .exclude("com.fasterxml.jackson.core" -> "jackson-core")
+      .exclude("com.fasterxml.jackson.core" -> "jackson-databind")
+      .exclude("com.fasterxml.jackson.core" -> "jackson-annotations"),
+  )
+
+  object test extends build.BaseTestModule {
+    def scalaVersion = crossValue
+    def moduleDeps = Seq(build.cloud_k8s(crossValue))
+    def mvnDeps = super.mvnDeps() ++ build.Constants.testDeps
+    override def testFramework = "org.scalatest.tools.Framework"
+    def forkArgs = build.Constants.commonTestForkArgs
+  }
+
+  def prependShellScript = ""
+}

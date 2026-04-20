@@ -26,6 +26,12 @@ case object Snowflake extends Format {
 
   @transient private lazy val snowflakeLogger = LoggerFactory.getLogger(getClass)
 
+  private def toEpochMilli(value: Any): Long = value match {
+    case d: java.sql.Date        => d.toLocalDate.atStartOfDay(ZoneOffset.UTC).toInstant.toEpochMilli
+    case ld: java.time.LocalDate => ld.atStartOfDay(ZoneOffset.UTC).toInstant.toEpochMilli
+    case other                   => throw new IllegalArgumentException(s"Unexpected date type: ${other.getClass}")
+  }
+
   override def table(tableName: String, partitionFilters: String)(implicit sparkSession: SparkSession): DataFrame = {
     throw new UnsupportedOperationException(
       "Direct table reads are not supported for Snowflake format. Use a stagingQuery with EngineType.SNOWFLAKE to export the data first.")
@@ -37,6 +43,25 @@ case object Snowflake extends Format {
                            tableProperties: Map[String, String],
                            semanticHash: Option[String])(implicit sparkSession: SparkSession): Unit = {
     throw new UnsupportedOperationException("Table creation is not supported for Snowflake format.")
+  }
+
+  override def primaryPartitions(tableName: String,
+                                 partitionColumn: String,
+                                 partitionFilters: String,
+                                 subPartitionsFilter: Map[String, String] = Map.empty)(implicit
+      sparkSession: SparkSession): List[String] = {
+    if (!supportSubPartitionsFilter && subPartitionsFilter.nonEmpty) {
+      throw new NotImplementedError("subPartitionsFilter is not supported for Snowflake tables")
+    }
+    val partitionFormat = sparkSession.conf.get("spark.chronon.partition.format", "yyyy-MM-dd")
+    val (database, schema, table) = parseTableName(tableName)
+
+    // Use the clustering key if one exists, otherwise fall back to the column requested by the caller
+    val effectiveColumn = getPartitionColumn(database, schema, table).getOrElse(partitionColumn)
+    snowflakeLogger.info(s"Using partition column '$effectiveColumn' for table $tableName")
+
+    queryDistinctPartitions(tableName, effectiveColumn, partitionFilters, partitionFormat)
+      .flatMap(_.collectFirst { case (k, v) if k.equalsIgnoreCase(effectiveColumn) => v })
   }
 
   override def partitions(tableName: String, partitionFilters: String)(implicit
@@ -167,10 +192,10 @@ case object Snowflake extends Format {
     partitions
   }
 
-  private def buildPartitionQuery(tableName: String,
-                                  partitionColumn: String,
-                                  partitionFilters: String,
-                                  partitionFormat: String): String = {
+  private[cloud_azure] def buildPartitionQuery(tableName: String,
+                                               partitionColumn: String,
+                                               partitionFilters: String,
+                                               partitionFormat: String): String = {
     // Convert Java DateTimeFormatter pattern to Snowflake format pattern
     // Common mappings: yyyy->YYYY, MM->MM, dd->DD
     val snowflakeFormat = partitionFormat
@@ -201,7 +226,7 @@ case object Snowflake extends Format {
       result.flatMap { row =>
         if (row.isNullAt(0)) None
         else {
-          val utcMillis = row.getDate(0).toLocalDate.atStartOfDay(ZoneOffset.UTC).toInstant.toEpochMilli
+          val utcMillis = toEpochMilli(row.get(0))
           Some(partitionSpec.at(utcMillis))
         }
       }
@@ -230,8 +255,8 @@ case object Snowflake extends Format {
         .flatMap { row =>
           if (row.isNullAt(0) || row.isNullAt(1)) None
           else {
-            val minMillis = row.getDate(0).toLocalDate.atStartOfDay(ZoneOffset.UTC).toInstant.toEpochMilli
-            val maxMillis = row.getDate(1).toLocalDate.atStartOfDay(ZoneOffset.UTC).toInstant.toEpochMilli
+            val minMillis = toEpochMilli(row.get(0))
+            val maxMillis = toEpochMilli(row.get(1))
             Some(partitionSpec.expandRange(partitionSpec.at(minMillis), partitionSpec.at(maxMillis)))
           }
         }

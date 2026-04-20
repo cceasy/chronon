@@ -1,6 +1,6 @@
 from sources.test.data import source_v1
 
-from ai.chronon.group_by import Aggregation, GroupBy, Operation, TimeUnit, Window
+from ai.chronon.types import Aggregation, GroupBy, Operation, TimeUnit, Window
 
 window_sizes = [
     Window(length=day, time_unit=TimeUnit.DAYS) for day in [3, 14, 30]

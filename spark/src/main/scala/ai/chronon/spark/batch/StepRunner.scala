@@ -98,15 +98,14 @@ object StepRunner {
 
     stepRunner.run(requestedRange)
 
-    val producedPartitions = tableUtils.partitions(tableName).toSet
-    val requestedPartitions = requestedRange.partitions.toSet
-    val missingPartitions = requestedPartitions -- producedPartitions
-
-    if (missingPartitions.nonEmpty) {
-      logger.error(s"Missing partitions in $tableName: ${missingPartitions.toSeq.sorted.mkString(", ")}")
-      // throw new RuntimeException(s"Failed to produce partitions ${missingPartitions.toSeq} in $tableName. Requested ${requestedRange}")
+    val lastPartition = tableUtils.lastAvailablePartition(tableName)
+    lastPartition match {
+      case Some(lp) if lp >= requestedRange.end =>
+        logger.info(s"Output table $tableName covers requested range (last: $lp >= end: ${requestedRange.end})")
+      case Some(lp) =>
+        logger.error(s"Output table $tableName last partition $lp < required end ${requestedRange.end}")
+      case None =>
+        logger.error(s"Output table $tableName has no partitions after run")
     }
-
-    logger.info(s"Successfully produced all ${requestedPartitions.size} partitions in $tableName")
   }
 }

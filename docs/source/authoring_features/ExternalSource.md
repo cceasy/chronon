@@ -59,7 +59,7 @@ An `ExternalPart` connects an ExternalSource to a Join, similar to how JoinPart 
 
 ```python
 from ai.chronon.api import ExternalSource, ExternalPart, Join
-from ai.chronon.api.ttypes import StructType, StructField, StringType, LongType, IntType
+from ai.chronon.types import StructType, StructField, StringType, LongType, IntType
 
 # Define the external source schema
 user_service_source = ExternalSource(

@@ -14,4 +14,7 @@ RUN  curl -fL https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-azure/3.4.
 
 RUN chown -R spark:spark ${SPARK_JARS_DIR}
 
+RUN echo '{"common":{"log_level":"INFO","log_path":"/tmp"}}' > /etc/sf_client_config.json
+ENV SF_CLIENT_CONFIG_FILE=/etc/sf_client_config.json
+
 USER spark

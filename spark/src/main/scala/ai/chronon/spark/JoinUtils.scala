@@ -37,6 +37,7 @@ import scala.jdk.CollectionConverters._
 
 object JoinUtils {
   @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
+
   val set_add: UserDefinedFunction =
     udf((set: Seq[String], item: String) => {
       if (set == null && item == null) {
@@ -292,11 +293,10 @@ object JoinUtils {
   def tablesToRecompute(joinConf: ai.chronon.api.Join,
                         outputTable: String,
                         tableUtils: TableUtils): scala.Seq[String] = {
-    // Finds all join output tables (join parts and final table) that need recomputing (in monolithic spark job mode)
     val gson = new Gson()
     (for (
       props <- tableUtils.getTableProperties(outputTable);
-      oldSemanticJson <- props.get(Constants.SemanticHashKey);
+      oldSemanticJson <- props.get(Constants.JoinSemanticHashKey);
       oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).toScala
     ) yield {
       logger.info(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
@@ -313,10 +313,11 @@ object JoinUtils {
       val gson = new Gson()
       val props = tableUtils.getTableProperties(outputTable)
 
-      val oldSemanticJson = props.get(Constants.SemanticHashKey)
-      val oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).toScala
+      val oldSemanticJson = props.flatMap(_.get(Constants.JoinSemanticHashKey))
+      val oldSemanticHash =
+        oldSemanticJson.map(json => gson.fromJson(json, classOf[java.util.HashMap[String, String]]).toScala)
 
-      joinConf.leftChanged(oldSemanticHash)
+      oldSemanticHash.exists(joinConf.leftChanged)
 
     } catch {
 

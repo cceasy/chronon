@@ -19,19 +19,6 @@ DEMO_DERIVATIONS = {
 
 
 @pytest.mark.integration
-def test_backfill(confs, chronon_root, hub_url, cloud):
-    """Compile canary configs from scratch, submit a backfill, and poll until success."""
-    runner = CliRunner()
-    compile_configs(runner, chronon_root)
-
-    workflow_id = submit_backfill(
-        runner, chronon_root, hub_url,
-        confs[DEMO_DERIVATIONS[cloud]], "2026-03-01", "2026-03-01",
-    )
-    poll_workflow(hub_url, workflow_id, timeout=1800, interval=45)
-
-
-@pytest.mark.integration
 def test_backfill_no_data(confs, chronon_root, hub_url, cloud):
     """Backfill with dates that have no input data should result in a failed workflow."""
     runner = CliRunner()
@@ -39,21 +26,31 @@ def test_backfill_no_data(confs, chronon_root, hub_url, cloud):
 
     workflow_id = submit_backfill(
         runner, chronon_root, hub_url,
-        confs[DEMO_DERIVATIONS[cloud]], "1969-01-01", "1969-01-01",
+        confs(DEMO_DERIVATIONS[cloud]), "1969-01-01", "1969-01-01",
     )
     with pytest.raises(RuntimeError, match="ended with status FAILED"):
         poll_workflow(hub_url, workflow_id, timeout=1800, interval=45)
 
 
+# Conf for multi-day backfill that expects success.
+# GCP/AWS: join derivation (exercises full multi-step DAG).
+# Azure: staging query (user_activities/checkouts not yet seeded in Snowflake canary).
+MULTIDAY_BACKFILL = {
+    "gcp": "compiled/joins/gcp/demo.derivations_v1__2",
+    "aws": "compiled/joins/aws/demo.derivations_v1__2",
+    "azure": "compiled/staging_queries/azure/exports.dim_listings__0",
+}
+
+
 @pytest.mark.integration
-def test_staging_query_backfill_multiday(confs, chronon_root, hub_url, cloud):
-    """Multi-day backfill of a staging query exercises multi-step allocation."""
+def test_backfill_multiday(confs, chronon_root, hub_url, cloud):
+    """Multi-day backfill exercises multi-step allocation."""
     runner = CliRunner()
     compile_configs(runner, chronon_root)
 
     workflow_id = submit_backfill(
         runner, chronon_root, hub_url,
-        confs[f"compiled/staging_queries/{cloud}/exports.user_activities__0"],
+        confs(MULTIDAY_BACKFILL[cloud]),
         "2026-03-01", "2026-03-03",
     )
     poll_workflow(hub_url, workflow_id, timeout=1800, interval=45)

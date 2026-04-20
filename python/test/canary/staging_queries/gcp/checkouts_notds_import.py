@@ -1,6 +1,5 @@
-from gen_thrift.common.ttypes import ConfigProperties
-
-from ai.chronon.staging_query import EngineType, StagingQuery, TableDependency
+from ai.chronon.types import EngineType, StagingQuery, TableDependency
+from ai.chronon.types import ConfigProperties
 
 v1 = StagingQuery(
     query="SELECT * FROM data.checkouts_notds WHERE notds BETWEEN {{ start_date }} AND {{ end_date }}",

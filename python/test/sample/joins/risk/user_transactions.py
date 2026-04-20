@@ -3,8 +3,7 @@ from group_bys.risk.merchant_data import merchant_group_by
 from group_bys.risk.transaction_events import txn_group_by_merchant, txn_group_by_user
 from group_bys.risk.user_data import user_group_by
 
-from ai.chronon.join import Join, JoinPart
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Join, JoinPart, Query, selects
 
 source_users = Source(
     events=EventSource(

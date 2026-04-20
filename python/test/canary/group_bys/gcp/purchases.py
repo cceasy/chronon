@@ -1,23 +1,19 @@
-from gen_thrift.api.ttypes import EventSource, Source
 from staging_queries.gcp import purchases_import, purchases_notds_import
 
-from ai.chronon.group_by import Aggregation, GroupBy, Operation, TimeUnit, Window
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Aggregation, EventSource, GroupBy, Operation, Query, TimeUnit, Window, selects
 
 """
 This GroupBy aggregates metrics about a user's previous purchases in various windows.
 """
 
 # Source data is exported from BigQuery to Iceberg via a StagingQuery (purchases_import).
-source = Source(
-    events=EventSource(
-        table=purchases_import.v1.table,
-        topic=None,
-        query=Query(
-            selects=selects("user_id","purchase_price"),
-            start_partition="2023-11-01",
-            time_column="ts")
-    ))
+source = EventSource(
+    table=purchases_import.v1.table,
+    query=Query(
+        selects=selects("user_id","purchase_price"),
+        start_partition="2023-11-01",
+        time_column="ts")
+)
 
 window_sizes = [Window(length=day, time_unit=TimeUnit.DAYS) for day in [1, 3, 7]] # Define some window sizes to use below
 
@@ -76,17 +72,15 @@ v1_test = GroupBy(
     ],
 )
 
-source_notds = Source(
-    events=EventSource(
-        table=purchases_notds_import.v1.table,
-        topic=None,
-        query=Query(
-            selects=selects("user_id","purchase_price"),
-            time_column="ts",
-            start_partition="2023-11-01",
-            partition_column="notds"
-        )
-    ))
+source_notds = EventSource(
+    table=purchases_notds_import.v1.table,
+    query=Query(
+        selects=selects("user_id","purchase_price"),
+        time_column="ts",
+        start_partition="2023-11-01",
+        partition_column="notds"
+    )
+)
 
 v1_test_notds = GroupBy(
     sources=[source_notds],

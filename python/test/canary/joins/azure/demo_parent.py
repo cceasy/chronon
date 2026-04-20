@@ -1,12 +1,7 @@
-from gen_thrift.api.ttypes import EventSource, Source, JoinSource
-
 from group_bys.azure import dim_listings, dim_merchants
 from staging_queries.azure import exports
 
-from ai.chronon.group_by import Aggregation, Operation, TimeUnit, Window
-from ai.chronon.join import Derivation, Join, JoinPart
-from ai.chronon.query import Query, selects
-from ai.chronon.source import EventSource
+from ai.chronon.types import Aggregation, Derivation, EventSource, Join, JoinPart, JoinSource, Operation, Query, TimeUnit, Window, selects
 from ai.chronon.types import EnvironmentVariables
 
 source = EventSource(

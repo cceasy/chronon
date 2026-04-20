@@ -1,6 +1,7 @@
 package ai.chronon.integrations.aws
 
 import ai.chronon.api.JobStatusType
+import ai.chronon.integrations.cloud_k8s.K8sFlinkSubmitter
 import ai.chronon.spark.submission.JobSubmitterConstants.MaxRetainedCheckpoints
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.scalatest.flatspec.AnyFlatSpec
@@ -9,7 +10,7 @@ import java.time.Instant
 
 class EksFlinkSubmitterTest extends AnyFlatSpec {
 
-  private val submitter = new EksFlinkSubmitter()
+  private val submitter: K8sFlinkSubmitter = EksFlinkSubmitter()
 
   private val checkpointUri = "s3://zipline-warehouse/flink-checkpoints"
 
@@ -107,24 +108,24 @@ class EksFlinkSubmitterTest extends AnyFlatSpec {
   }
 
   "sanitizeDeploymentName" should "lowercase and replace invalid chars with dashes" in {
-    assertEquals("flink-my-job-123", EksFlinkSubmitter.sanitizeDeploymentName("flink-My_Job.123"))
+    assertEquals("flink-my-job-123", K8sFlinkSubmitter.sanitizeDeploymentName("flink-My_Job.123"))
   }
 
   it should "truncate to 45 characters" in {
     val long = "flink-" + "a" * 50
-    val result = EksFlinkSubmitter.sanitizeDeploymentName(long)
+    val result = K8sFlinkSubmitter.sanitizeDeploymentName(long)
     assertTrue(s"Expected <= 45 chars, got ${result.length}", result.length <= 45)
   }
 
   it should "strip trailing dashes after truncation" in {
     // Construct a name whose 45th character lands on a dash
     val name = "a" * 44 + "-extra"
-    val result = EksFlinkSubmitter.sanitizeDeploymentName(name)
+    val result = K8sFlinkSubmitter.sanitizeDeploymentName(name)
     assertFalse(s"Expected no trailing dash, got: $result", result.endsWith("-"))
   }
 
   it should "strip leading and trailing dashes" in {
-    assertEquals("foo-bar", EksFlinkSubmitter.sanitizeDeploymentName("--foo-bar--"))
+    assertEquals("foo-bar", K8sFlinkSubmitter.sanitizeDeploymentName("--foo-bar--"))
   }
 
   "eksAdditionalFlinkJars" should "resolve jar names against the base path" in {
@@ -148,8 +149,8 @@ class EksFlinkSubmitterTest extends AnyFlatSpec {
     }
   }
 
-  "EksFlinkSubmitter with ingressBaseUrl" should "not set web.base-url in flinkConfiguration" in {
-    val submitterWithIngress = new EksFlinkSubmitter(ingressBaseUrl = Some("https://hub.example.com"))
+  "EksFlinkSubmitter() with ingressBaseUrl" should "not set web.base-url in flinkConfiguration" in {
+    val submitterWithIngress = EksFlinkSubmitter(ingressBaseUrl = Some("https://hub.example.com"))
     val cfg = submitterWithIngress.buildFlinkConfiguration(checkpointUri, Map.empty)
     assertFalse("web.base-url is not honoured by the EMR Flink image and must not be set", cfg.contains("web.base-url"))
   }
@@ -191,7 +192,7 @@ class EksFlinkSubmitterTest extends AnyFlatSpec {
       emr.getFlinkUrl("flink:zipline-flink:my-deployment"))
   }
 
-  "EksFlinkSubmitter.resolveStatus" should "return RUNNING when lifecycleState is STABLE" in {
+  "resolveStatus" should "return RUNNING when lifecycleState is STABLE" in {
     assertEquals(JobStatusType.RUNNING,
       submitter.resolveStatus("d", "STABLE", "READY", Some(Instant.now())))
   }
@@ -240,20 +241,20 @@ class EksFlinkSubmitterTest extends AnyFlatSpec {
   }
 
   it should "return FAILED when jmDeploymentStatus is MISSING and deployment has timed out" in {
-    val oldTs = Some(Instant.now().minusSeconds(EksFlinkSubmitter.DeploymentPendingTimeout.toSeconds + 60))
+    val oldTs = Some(Instant.now().minusSeconds(K8sFlinkSubmitter.DeploymentPendingTimeout.toSeconds + 60))
     assertEquals(JobStatusType.FAILED,
       submitter.resolveStatus("d", "DEPLOYED", "MISSING", oldTs))
   }
 
   it should "return FAILED when DEPLOYED with READY jmStatus but deployment has timed out" in {
     // Covers the unschedulable TM scenario — JM is up (READY) but TMs never join
-    val oldTs = Some(Instant.now().minusSeconds(EksFlinkSubmitter.DeploymentPendingTimeout.toSeconds + 60))
+    val oldTs = Some(Instant.now().minusSeconds(K8sFlinkSubmitter.DeploymentPendingTimeout.toSeconds + 60))
     assertEquals(JobStatusType.FAILED,
       submitter.resolveStatus("d", "DEPLOYED", "READY", oldTs))
   }
 
   it should "return FAILED when UPGRADING with READY jmStatus but deployment has timed out" in {
-    val oldTs = Some(Instant.now().minusSeconds(EksFlinkSubmitter.DeploymentPendingTimeout.toSeconds + 60))
+    val oldTs = Some(Instant.now().minusSeconds(K8sFlinkSubmitter.DeploymentPendingTimeout.toSeconds + 60))
     assertEquals(JobStatusType.FAILED,
       submitter.resolveStatus("d", "UPGRADING", "READY", oldTs))
   }
@@ -264,11 +265,39 @@ class EksFlinkSubmitterTest extends AnyFlatSpec {
       submitter.resolveStatus("d", "DEPLOYED", "READY", None))
   }
 
-  "EksFlinkSubmitter.createFlinkIngress" should "throw IllegalArgumentException when host cannot be extracted" in {
+  "createFlinkIngress" should "throw IllegalArgumentException when host cannot be extracted" in {
     // "not-a-valid-url" parses as a relative URI, so getHost returns null — triggering the fast-fail
-    val submitterWithBadUrl = new EksFlinkSubmitter(ingressBaseUrl = Some("not-a-valid-url"))
+    val submitterWithBadUrl = EksFlinkSubmitter(ingressBaseUrl = Some("not-a-valid-url"))
     assertThrows[IllegalArgumentException] {
       submitterWithBadUrl.createFlinkIngress(null, "my-deployment", "default", "some-uid")
     }
+  }
+
+  "statusWithCreationTime contract" should "agree with resolveStatus for STABLE state" in {
+    val ts = Some(Instant.now())
+    val (status, _) = (submitter.resolveStatus("d", "STABLE", "READY", ts), ts)
+    assertEquals(JobStatusType.RUNNING, status)
+  }
+
+  it should "agree with resolveStatus for FAILED state" in {
+    val ts = Some(Instant.now())
+    val status = submitter.resolveStatus("d", "FAILED", "READY", ts)
+    assertEquals(JobStatusType.FAILED, status)
+  }
+
+  it should "agree with resolveStatus: DEPLOYED within timeout stays PENDING" in {
+    val ts = Some(Instant.now())
+    assertEquals(JobStatusType.PENDING, submitter.resolveStatus("d", "DEPLOYED", "MISSING", ts))
+  }
+
+  it should "agree with resolveStatus: DEPLOYED past timeout becomes FAILED" in {
+    val oldTs = Some(Instant.now().minusSeconds(K8sFlinkSubmitter.DeploymentPendingTimeout.toSeconds + 60))
+    assertEquals(JobStatusType.FAILED, submitter.resolveStatus("d", "DEPLOYED", "MISSING", oldTs))
+  }
+
+  it should "return RUNNING status for STABLE deployment (the state where creation time matters)" in {
+    val ts = Some(Instant.now().minusSeconds(30))
+    val status = submitter.resolveStatus("my-dep", "STABLE", "READY", ts)
+    assertEquals(JobStatusType.RUNNING, status)
   }
 }

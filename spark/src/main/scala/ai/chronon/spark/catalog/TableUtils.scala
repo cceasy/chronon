@@ -63,8 +63,6 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
     sparkSession.conf.get("spark.chronon.backfill.bloomfilter.threshold", "1000000").toLong
   val checkLeftTimeRange: Boolean =
     sparkSession.conf.get("spark.chronon.join.backfill.check.left_time_range", "false").toBoolean
-  private val isBenchmarkMode = sparkSession.conf.get("spark.chronon.backfill.benchmarkMode.enabled", "true").toBoolean
-
   // TODO: This should be at the level of groupBy in theory
   val skewFreeMode: Boolean = sparkSession.conf
     .get("spark.chronon.join.backfill.mode.skewFree", "true")
@@ -88,6 +86,11 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
   def tableReachable(tableName: String, ignoreFailure: Boolean = false): Boolean = {
     Try { sparkSession.table(tableName) } match {
       case Success(_) => true
+      case Failure(ex: AnalysisException) if ex.getMessage.contains("TABLE_OR_VIEW_NOT_FOUND") =>
+        if (!ignoreFailure) {
+          logger.info(s"Cannot find table or view $tableName.")
+        }
+        false
       case Failure(ex) =>
         if (!ignoreFailure) {
           logger.info(s"""Couldn't reach $tableName. Error: ${ex.traceString.red}
@@ -171,19 +174,21 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
 
   def tableCoversRange(table: String, range: PartitionRange): Boolean = {
     try {
-      val requiredPartitions = range.partitions.toSet
-      val coveredPartitions = partitions(table).toSet
-
-      val isFullyCovered = requiredPartitions.subsetOf(coveredPartitions)
-      if (!isFullyCovered) {
-        logger.info(
-          s"Production table $table does not cover full range. Required: $requiredPartitions, Available: $coveredPartitions")
+      lastAvailablePartition(table) match {
+        case Some(maxPartition) =>
+          val covers = maxPartition >= range.end
+          if (!covers) {
+            logger.info(
+              s"Table $table does not cover range: last available partition $maxPartition < required end ${range.end}")
+          }
+          covers
+        case None =>
+          logger.info(s"Table $table has no available partitions")
+          false
       }
-
-      isFullyCovered
     } catch {
       case e: Exception =>
-        logger.warn(s"Error checking production table coverage: ${e.getMessage}")
+        logger.warn(s"Error checking table coverage: ${e.getMessage}")
         false
     }
   }
@@ -211,26 +216,48 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
   def lastAvailablePartition(tableName: String,
                              partitionRange: Option[PartitionRange] = None,
                              subPartitionFilters: Map[String, String] = Map.empty,
-                             tablePartitionSpec: Option[PartitionSpec] = None): Option[String] =
-    partitions(tableName, subPartitionFilters, partitionRange, tablePartitionSpec = tablePartitionSpec).reduceOption(
-      (x, y) => Ordering[String].max(x, y))
+                             tablePartitionSpec: Option[PartitionSpec] = None): Option[String] = {
+    val effectiveSpec = tablePartitionSpec.getOrElse(partitionSpec)
+    val effectivePartColumn = effectiveSpec.column
+    if (subPartitionFilters.nonEmpty) {
+      // Fall back to enumeration when sub-partition filters are needed
+      partitions(tableName, subPartitionFilters, partitionRange, tablePartitionSpec = tablePartitionSpec).reduceOption(
+        (x, y) => Ordering[String].max(x, y))
+    } else {
+      val result = tableFormatProvider
+        .readFormat(tableName)
+        .flatMap(_.lastAvailablePartition(tableName, effectivePartColumn, effectiveSpec)(sparkSession))
+      // Translate to global partitionSpec if needed
+      result.map(date => effectiveSpec.translate(date, partitionSpec))
+    }
+  }
 
   def firstAvailablePartition(tableName: String,
                               partitionSpec: PartitionSpec = partitionSpec,
                               partitionRange: Option[PartitionRange] = None,
-                              subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
-    partitions(
-      tableName,
-      subPartitionFilters,
-      partitionRange.map(_.translate(partitionSpec)),
-      tablePartitionSpec = Some(partitionSpec)
-    ).reduceOption((x, y) => Ordering[String].min(x, y))
+                              subPartitionFilters: Map[String, String] = Map.empty): Option[String] = {
+    if (subPartitionFilters.nonEmpty) {
+      // Fall back to enumeration when sub-partition filters are needed
+      partitions(
+        tableName,
+        subPartitionFilters,
+        partitionRange.map(_.translate(partitionSpec)),
+        tablePartitionSpec = Some(partitionSpec)
+      ).reduceOption((x, y) => Ordering[String].min(x, y))
+    } else {
+      val effectivePartColumn = partitionSpec.column
+      val result = tableFormatProvider
+        .readFormat(tableName)
+        .flatMap(_.firstAvailablePartition(tableName, effectivePartColumn, partitionSpec)(sparkSession))
+      // Translate to global partitionSpec if needed
+      result.map(date => partitionSpec.translate(date, this.partitionSpec))
+    }
+  }
 
   def insertPartitions(df: DataFrame,
                        tableName: String,
                        tableProperties: Map[String, String] = null,
                        partitionColumns: List[String] = List(partitionColumn),
-                       saveMode: SaveMode = SaveMode.Overwrite,
                        autoExpand: Boolean = false,
                        semanticHash: Option[String] = None): Unit = {
 
@@ -288,31 +315,44 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
       dfRearranged
     }
 
-    val crossCatalogPersist =
-      sparkSession.conf.get("spark.chronon.cross_catalog.persist", "false").toBoolean
-
-    // When reading from one catalog (e.g. Delta via UCSingleCatalog) and writing to another
-    // (e.g. Iceberg via REST), we must materialize the DataFrame before the write so that
-    // DeltaSparkSessionExtension's PreprocessTableWithDVsStrategy doesn't see TahoeFileIndex
-    // in the write plan as a temporary fix until this PR is merged https://github.com/delta-io/delta/pull/5804
-    if (!isBenchmarkMode || crossCatalogPersist) {
-      finalizedDf.cache()
-    }
-
     logger.info(s"Writing to $tableName ...")
-    finalizedDf.write
-      .mode(saveMode)
-      // Requires table to exist before inserting.
-      // Fails if schema does not match.
-      // Does NOT overwrite the schema.
-      // Handles dynamic partition overwrite.
-      .insertInto(tableName)
-    logger.info(s"Finished writing to $tableName")
-
-    if (!isBenchmarkMode || crossCatalogPersist) {
-      logger.info(s"Table $tableName has been written with ${finalizedDf.count()} rows.")
-      finalizedDf.unpersist()
+    val isIceberg = tableFormatProvider.readFormat(tableName).contains(Iceberg)
+    val hasPartitionSpec =
+      isIceberg && Try(Iceberg.partitionColumnNames(tableName)(sparkSession).nonEmpty).getOrElse(false)
+    if (isIceberg && partitionColumns.nonEmpty && !hasPartitionSpec) {
+      // Unpartitioned / UC liquid clustering: insertInto() with DYNAMIC mode appends instead of
+      // replacing. Use MERGE INTO with ON FALSE for atomic delete+insert in a single snapshot.
+      // ON FALSE means: no target row matches any source row, so all target rows matching the
+      // delete condition are "not matched by source" (deleted) and all source rows are
+      // "not matched by target" (inserted).
+      //
+      // Delete condition uses per-column IN lists AND'ed together rather than a min/max range.
+      // additionalPartitions can include categorical columns (e.g. `action`) where range
+      // semantics are meaningless; IN-lists stay correct for those. It is slightly over-broad
+      // for multi-column keys (matches cartesian product of distinct values) but safe here —
+      // we only delete rows the upstream job intends to rewrite.
+      val tempView = s"__chronon_insert_${tableName.replace('.', '_')}_${System.nanoTime()}"
+      finalizedDf.createOrReplaceTempView(tempView)
+      val deleteCondition = partitionColumns
+        .map { pc =>
+          val values = finalizedDf.select(col(pc)).distinct().collect().map(row => lit(row.get(0)).expr.sql)
+          s"target.`$pc` IN (${values.mkString(", ")})"
+        }
+        .mkString(" AND ")
+      val mergeSQL =
+        s"""MERGE INTO $tableName AS target
+           |USING $tempView AS source
+           |ON FALSE
+           |WHEN NOT MATCHED BY SOURCE AND $deleteCondition THEN DELETE
+           |WHEN NOT MATCHED THEN INSERT *""".stripMargin
+      sparkSession.sql(mergeSQL)
+      sparkSession.catalog.dropTempView(tempView)
+    } else {
+      finalizedDf.write
+        .mode(SaveMode.Overwrite)
+        .insertInto(tableName)
     }
+    logger.info(s"Finished writing to $tableName")
   }
 
   // retains only the invocations from chronon code.
@@ -702,7 +742,6 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
              range: Option[PartitionRange] = None): DataFrame = {
 
     val maybeQuery = Option(query)
-    val isTimePartitioned = maybeQuery.exists(q => q.isSetTimePartitioned && q.timePartitioned)
 
     val queryPartitionColumn = maybeQuery.flatMap(q => Option(q.partitionColumn)).getOrElse(partitionColumn)
 
@@ -718,8 +757,9 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
 
     if (queryPartitionColumn != partitionColumn) {
       val renamed = scanDf.withColumnRenamed(queryPartitionColumn, partitionColumn)
-      if (isTimePartitioned) {
-        // Convert timestamp/date column to formatted date string for downstream partition logic
+      // If the partition column is not a string (e.g. timestamp/date), convert to formatted date string
+      val colType = renamed.schema(partitionColumn).dataType
+      if (colType != StringType) {
         renamed.withColumn(partitionColumn, date_format(col(partitionColumn).cast(DateType), partitionFormat))
       } else {
         renamed

@@ -1,7 +1,6 @@
 from gen_thrift.api.ttypes import EventSource, Source
 
-from ai.chronon.group_by import Aggregation, GroupBy, Operation
-from ai.chronon.query import Query, selects
+from ai.chronon.types import Aggregation, GroupBy, Operation, Query, selects
 
 """
 This GroupBy aggregates metrics about a user's previous purchases in various windows.

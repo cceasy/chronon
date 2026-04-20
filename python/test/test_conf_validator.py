@@ -2,9 +2,11 @@ from gen_thrift.api.ttypes import (
     Aggregation,
     BootstrapPart,
     EventSource,
+    ExternalPart,
     GroupBy,
     Join,
     JoinPart,
+    JoinSource,
     MetaData,
     Operation,
     Query,
@@ -133,6 +135,269 @@ class TestOnlineConfNotChangedInPlace:
         errors = validator.validate_obj(new_gb)
         assert not _has_online_in_place_error(errors)
 
+    def test_chained_online_join_nested_metadata_only_change_is_allowed(self):
+        """Deeply nested metaData (e.g. joinSource.join.metaData) should be stripped during diff."""
+        inner_join = Join(
+            left=Source(
+                events=EventSource(
+                    table="inner_left",
+                    query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                )
+            ),
+            joinParts=[JoinPart(groupBy=_make_group_by(name="team.inner_gb", online=True))],
+            metaData=MetaData(name="team.inner_join", online=True),
+        )
+        gb_with_join_source = GroupBy(
+            sources=[
+                Source(
+                    joinSource=JoinSource(
+                        join=inner_join,
+                        query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                    )
+                )
+            ],
+            keyColumns=["user_id"],
+            aggregations=[Aggregation(inputColumn="price", operation=Operation.SUM)],
+            metaData=MetaData(name="team.chained_gb", online=True),
+        )
+        old_join = Join(
+            left=Source(
+                events=EventSource(
+                    table="left_table",
+                    query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                )
+            ),
+            joinParts=[JoinPart(groupBy=gb_with_join_source)],
+            metaData=MetaData(name="team.outer_join", online=True),
+        )
+
+        # Build new_join identically, then change only deeply nested metaData
+        import copy
+
+        new_join = copy.deepcopy(old_join)
+        nested_join = new_join.joinParts[0].groupBy.sources[0].joinSource.join
+        nested_join.metaData.customJson = '{"VERSION": "2"}'
+
+        validator = _make_validator(existing_joins={old_join.metaData.name: old_join})
+        errors = validator.validate_obj(new_join)
+        assert not _has_online_in_place_error(errors)
+
+    def test_online_join_external_parts_only_change_is_allowed(self):
+        """onlineExternalParts is a skipped field, so changes to it should not trigger a diff."""
+        import copy
+
+        old_join = _make_join(online=True)
+        new_join = copy.deepcopy(old_join)
+        new_join.onlineExternalParts = [
+            ExternalPart(
+                source=Source(
+                    events=EventSource(
+                        table="external_table",
+                        query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                    )
+                ),
+                keyMapping={"user_id": "user_id"},
+            )
+        ]
+        validator = _make_validator(existing_joins={old_join.metaData.name: old_join})
+
+        errors = validator.validate_obj(new_join)
+        assert not _has_online_in_place_error(errors)
+
+    def test_chained_online_join_nested_external_parts_change_is_allowed(self):
+        """onlineExternalParts on a nested joinSource.join should also be stripped during diff."""
+        import copy
+
+        inner_join = Join(
+            left=Source(
+                events=EventSource(
+                    table="inner_left",
+                    query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                )
+            ),
+            joinParts=[JoinPart(groupBy=_make_group_by(name="team.inner_gb2", online=True))],
+            metaData=MetaData(name="team.inner_join2", online=True),
+        )
+        gb_with_join_source = GroupBy(
+            sources=[
+                Source(
+                    joinSource=JoinSource(
+                        join=inner_join,
+                        query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                    )
+                )
+            ],
+            keyColumns=["user_id"],
+            aggregations=[Aggregation(inputColumn="price", operation=Operation.SUM)],
+            metaData=MetaData(name="team.chained_gb2", online=True),
+        )
+        old_join = Join(
+            left=Source(
+                events=EventSource(
+                    table="left_table",
+                    query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                )
+            ),
+            joinParts=[JoinPart(groupBy=gb_with_join_source)],
+            metaData=MetaData(name="team.outer_join2", online=True),
+        )
+
+        new_join = copy.deepcopy(old_join)
+        nested_join = new_join.joinParts[0].groupBy.sources[0].joinSource.join
+        nested_join.onlineExternalParts = [
+            ExternalPart(
+                source=Source(
+                    events=EventSource(
+                        table="ext_table",
+                        query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                    )
+                ),
+                keyMapping={"user_id": "user_id"},
+            )
+        ]
+
+        validator = _make_validator(existing_joins={old_join.metaData.name: old_join})
+        errors = validator.validate_obj(new_join)
+        assert not _has_online_in_place_error(errors)
+
+    def test_validate_all_detects_metadata_change(self):
+        """When skipped_fields is empty (validate_all mode), metadata changes ARE detected."""
+        import copy
+
+        old_join = _make_join(online=True)
+        new_join = copy.deepcopy(old_join)
+        new_join.metaData.customJson = '{"VERSION": "2"}'
+        validator = _make_validator(existing_joins={old_join.metaData.name: old_join})
+
+        assert not validator._has_diff(new_join, old_join)  # default: skipped
+        assert validator._has_diff(new_join, old_join, skipped_fields=[])  # validate_all: detected
+
+    def test_validate_all_detects_external_parts_change(self):
+        """When skipped_fields is empty (validate_all mode), onlineExternalParts changes ARE detected."""
+        import copy
+
+        old_join = _make_join(online=True)
+        new_join = copy.deepcopy(old_join)
+        new_join.onlineExternalParts = [
+            ExternalPart(
+                source=Source(
+                    events=EventSource(
+                        table="ext_table",
+                        query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                    )
+                ),
+                keyMapping={"user_id": "user_id"},
+            )
+        ]
+        validator = _make_validator(existing_joins={old_join.metaData.name: old_join})
+
+        assert not validator._has_diff(new_join, old_join)  # default: skipped
+        assert validator._has_diff(new_join, old_join, skipped_fields=[])  # validate_all: detected
+
+    def test_validate_all_detects_nested_metadata_change(self):
+        """When skipped_fields is empty, nested metaData changes ARE detected."""
+        import copy
+
+        inner_join = Join(
+            left=Source(
+                events=EventSource(
+                    table="inner_left",
+                    query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                )
+            ),
+            joinParts=[JoinPart(groupBy=_make_group_by(name="team.inner_gb3", online=True))],
+            metaData=MetaData(name="team.inner_join3", online=True),
+        )
+        gb_with_join_source = GroupBy(
+            sources=[
+                Source(
+                    joinSource=JoinSource(
+                        join=inner_join,
+                        query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                    )
+                )
+            ],
+            keyColumns=["user_id"],
+            aggregations=[Aggregation(inputColumn="price", operation=Operation.SUM)],
+            metaData=MetaData(name="team.chained_gb3", online=True),
+        )
+        old_join = Join(
+            left=Source(
+                events=EventSource(
+                    table="left_table",
+                    query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                )
+            ),
+            joinParts=[JoinPart(groupBy=gb_with_join_source)],
+            metaData=MetaData(name="team.outer_join3", online=True),
+        )
+
+        new_join = copy.deepcopy(old_join)
+        nested_join = new_join.joinParts[0].groupBy.sources[0].joinSource.join
+        nested_join.metaData.customJson = '{"VERSION": "2"}'
+
+        validator = _make_validator(existing_joins={old_join.metaData.name: old_join})
+
+        assert not validator._has_diff(new_join, old_join)  # default: skipped
+        assert validator._has_diff(new_join, old_join, skipped_fields=[])  # validate_all: detected
+
+    def test_validate_all_detects_nested_external_parts_change(self):
+        """When skipped_fields is empty, nested onlineExternalParts changes ARE detected."""
+        import copy
+
+        inner_join = Join(
+            left=Source(
+                events=EventSource(
+                    table="inner_left",
+                    query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                )
+            ),
+            joinParts=[JoinPart(groupBy=_make_group_by(name="team.inner_gb4", online=True))],
+            metaData=MetaData(name="team.inner_join4", online=True),
+        )
+        gb_with_join_source = GroupBy(
+            sources=[
+                Source(
+                    joinSource=JoinSource(
+                        join=inner_join,
+                        query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                    )
+                )
+            ],
+            keyColumns=["user_id"],
+            aggregations=[Aggregation(inputColumn="price", operation=Operation.SUM)],
+            metaData=MetaData(name="team.chained_gb4", online=True),
+        )
+        old_join = Join(
+            left=Source(
+                events=EventSource(
+                    table="left_table",
+                    query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                )
+            ),
+            joinParts=[JoinPart(groupBy=gb_with_join_source)],
+            metaData=MetaData(name="team.outer_join4", online=True),
+        )
+
+        new_join = copy.deepcopy(old_join)
+        nested_join = new_join.joinParts[0].groupBy.sources[0].joinSource.join
+        nested_join.onlineExternalParts = [
+            ExternalPart(
+                source=Source(
+                    events=EventSource(
+                        table="ext_table",
+                        query=Query(selects={"user_id": "user_id"}, timeColumn="ts"),
+                    )
+                ),
+                keyMapping={"user_id": "user_id"},
+            )
+        ]
+
+        validator = _make_validator(existing_joins={old_join.metaData.name: old_join})
+
+        assert not validator._has_diff(new_join, old_join)  # default: skipped
+        assert validator._has_diff(new_join, old_join, skipped_fields=[])  # validate_all: detected
+
     def test_error_message_includes_config_name(self):
         old_gb = _make_group_by(name="team.important_gb", online=True, price_expr="price")
         new_gb = _make_group_by(name="team.important_gb", online=True, price_expr="price * 2")
@@ -146,29 +411,27 @@ class TestOnlineConfNotChangedInPlace:
 
 
 class TestTimePartitionedValidation:
-    def test_group_by_source_requires_partition_column_when_time_partitioned(self):
+    # timePartitioned flag is deprecated — column type is detected automatically at runtime.
+    # These tests verify that setting timePartitioned without partitionColumn no longer errors.
+    def test_group_by_source_time_partitioned_without_partition_column_no_error(self):
         group_by = _make_group_by()
         group_by.sources[0].events.query.timePartitioned = True
         group_by.sources[0].events.query.partitionColumn = None
         validator = _make_validator()
 
         errors = validator.validate_obj(group_by)
-        assert _has_time_partitioned_missing_partition_column_error(
-            errors, "group_by team.my_gb source[0]"
-        )
+        assert not _has_time_partitioned_missing_partition_column_error(errors)
 
-    def test_join_left_requires_partition_column_when_time_partitioned(self):
+    def test_join_left_time_partitioned_without_partition_column_no_error(self):
         join = _make_join()
         join.left.events.query.timePartitioned = True
         join.left.events.query.partitionColumn = None
         validator = _make_validator()
 
         errors = validator.validate_obj(join)
-        assert _has_time_partitioned_missing_partition_column_error(
-            errors, "join team.my_join left"
-        )
+        assert not _has_time_partitioned_missing_partition_column_error(errors)
 
-    def test_join_bootstrap_part_requires_partition_column_when_time_partitioned(self):
+    def test_join_bootstrap_time_partitioned_without_partition_column_no_error(self):
         join = _make_join()
         bootstrap_query = Query()
         bootstrap_query.timePartitioned = True
@@ -182,9 +445,7 @@ class TestTimePartitionedValidation:
         validator = _make_validator()
 
         errors = validator.validate_obj(join)
-        assert _has_time_partitioned_missing_partition_column_error(
-            errors, "join team.my_join bootstrapParts[0]"
-        )
+        assert not _has_time_partitioned_missing_partition_column_error(errors)
 
     def test_time_partitioned_with_partition_column_passes(self):
         group_by = _make_group_by()

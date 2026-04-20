@@ -279,12 +279,13 @@ class TableDependenciesTest extends AnyFlatSpec with Matchers {
     result should be(empty)
   }
 
-  "TableDependencies.fromSource with timePartitioned" should "set timePartitioned on TableInfo" in {
+  // timePartitioned flag is deprecated — column type is detected automatically at runtime.
+  // These tests verify that setting partitionColumn to a timestamp column name works without the flag.
+  "TableDependencies.fromSource with timestamp partition column" should "set partitionColumn on TableInfo" in {
     val query = Builders.Query(
       partitionColumn = "created_at",
       timeColumn = "UNIX_TIMESTAMP(created_at) * 1000"
     )
-    query.setTimePartitioned(true)
 
     val source = Builders.Source.events(query, table = "test_db.events")
     val result = TableDependencies.fromSource(source)
@@ -293,28 +294,13 @@ class TableDependenciesTest extends AnyFlatSpec with Matchers {
     val tableInfo = result.get.getTableInfo
     tableInfo.getTable should equal("test_db.events")
     tableInfo.getPartitionColumn should equal("created_at")
-    tableInfo.timePartitioned should be(true)
   }
 
-  it should "fail when timePartitioned is true but partitionColumn is not set" in {
-    val query = Builders.Query(
-      timeColumn = "UNIX_TIMESTAMP(created_at) * 1000"
-    )
-    query.setTimePartitioned(true)
-
-    val source = Builders.Source.events(query, table = "test_db.events")
-
-    an[IllegalArgumentException] should be thrownBy {
-      TableDependencies.fromSource(source)
-    }
-  }
-
-  "TableDependencies.fromGroupBy with timePartitioned" should "propagate timePartitioned through sources" in {
+  "TableDependencies.fromGroupBy with timestamp partition column" should "propagate partitionColumn through sources" in {
     val query = Builders.Query(
       partitionColumn = "created_at",
       timeColumn = "UNIX_TIMESTAMP(created_at) * 1000"
     )
-    query.setTimePartitioned(true)
 
     val source = Builders.Source.events(query, table = "test_db.events")
     val groupBy = Builders.GroupBy(
@@ -331,7 +317,6 @@ class TableDependenciesTest extends AnyFlatSpec with Matchers {
 
     val deps = TableDependencies.fromGroupBy(groupBy)
     deps should not be empty
-    deps.head.getTableInfo.timePartitioned should be(true)
     deps.head.getTableInfo.getPartitionColumn should equal("created_at")
   }
 }

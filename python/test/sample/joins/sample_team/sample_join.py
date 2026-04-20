@@ -15,10 +15,7 @@
 from group_bys.sample_team import sample_group_by, sample_group_by_group_by
 from sources import sample_sources
 
-from ai.chronon.join import (
-    Join,
-    JoinPart,
-)
+from ai.chronon.types import Join, JoinPart
 from ai.chronon.repo.constants import RunMode
 from ai.chronon.types import EnvironmentVariables
 

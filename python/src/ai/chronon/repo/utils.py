@@ -77,9 +77,33 @@ def check_call(cmd):
     return subprocess.check_call(cmd.split(), bufsize=0)
 
 
-def check_output(cmd):
+def check_output(cmd, timeout=None, streaming=False):
     LOG.info("Running command: " + cmd)
-    return subprocess.check_output(cmd.split(), bufsize=0).strip()
+    proc = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1)
+    output_lines = []
+    deadline = (time.monotonic() + timeout) if timeout else None
+    for line in iter(proc.stdout.readline, b""):
+        if streaming:
+            print(line.decode("utf-8", errors="replace").rstrip(), flush=True)
+        output_lines.append(line)
+        if deadline and time.monotonic() > deadline:
+            proc.kill()
+            proc.wait()
+            raise subprocess.TimeoutExpired(cmd, timeout, output=b"".join(output_lines))
+    remaining = max(0, deadline - time.monotonic()) if deadline else None
+    try:
+        proc.wait(timeout=remaining)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise subprocess.TimeoutExpired(cmd, timeout, output=b"".join(output_lines)) from None
+    if proc.returncode != 0:
+        output = b"".join(output_lines)
+        output_str = output.decode("utf-8", errors="replace")
+        error_msg = f"Command '{cmd}' returned non-zero exit status {proc.returncode}.\n\nCommand output:\n{output_str}"
+        LOG.error(error_msg)
+        raise subprocess.CalledProcessError(proc.returncode, cmd, output=output, stderr=error_msg)
+    return b"".join(output_lines).strip()
 
 
 def custom_json(conf):
@@ -166,14 +190,6 @@ def download_jar(
     return jar_path
 
 
-def get_teams_json_file_path(repo_path):
-    return os.path.join(repo_path, "teams.json")
-
-
-def get_teams_py_file_path(repo_path):
-    return os.path.join(repo_path, "teams.py")
-
-
 def set_runtime_env_v3(params, conf):
     effective_mode = params.get("mode")
 
@@ -229,199 +245,6 @@ def set_runtime_env_v3(params, conf):
             LOG.info(f"Setting to environment: {key}={value}")
             print(f"Setting to environment: {key}={value}")
             os.environ[key] = value
-
-
-# TODO: delete this when we cutover
-def set_runtime_env(params):
-    """
-    Setting the runtime environment variables.
-    These are extracted from the common env, the team env and the common env.
-    In order to use the environment variables defined in the configs as overrides for the args in the cli this method
-    needs to be run before the runner and jar downloads.
-
-    The order of priority is:
-        - Environment variables existing already.
-        - Environment variables derived from args (like app_name)
-        - conf.metaData.modeToEnvMap for the mode (set on config)
-        - team's dev environment for each mode set on teams.json
-        - team's prod environment for each mode set on teams.json
-        - default team environment per context and mode set on teams.json
-        - Common Environment set in teams.json
-    """
-
-    environment = {
-        "common_env": {},
-        "conf_env": {},
-        "default_env": {},
-        "team_env": {},
-        "production_team_env": {},
-        "cli_args": {},
-    }
-
-    conf_type = None
-    # Normalize modes that are effectively replacement of each other (streaming/local-streaming/streaming-client)
-    effective_mode = params["mode"]
-    if effective_mode and "streaming" in effective_mode:
-        effective_mode = "streaming"
-    if params["repo"]:
-        # Break if teams.json and teams.py exists
-        teams_json_file = get_teams_json_file_path(params["repo"])
-        teams_py_file = get_teams_py_file_path(params["repo"])
-
-        if os.path.exists(teams_json_file) and os.path.exists(teams_py_file):
-            raise ValueError("Both teams.json and teams.py exist. Please only use teams.py.")
-
-        if os.path.exists(teams_json_file):
-            set_runtime_env_teams_json(environment, params, effective_mode, teams_json_file)
-        if params["app_name"]:
-            environment["cli_args"]["APP_NAME"] = params["app_name"]
-        else:
-            if not params["app_name"] and not environment["cli_args"].get("APP_NAME"):
-                # Provide basic app_name when no conf is defined.
-                # Modes like metadata-upload and metadata-export can rely on conf-type or folder rather than a conf.
-                environment["cli_args"]["APP_NAME"] = "_".join(
-                    [
-                        k
-                        for k in [
-                            "chronon",
-                            conf_type,
-                            (params["mode"].replace("-", "_") if params["mode"] else None),
-                        ]
-                        if k is not None
-                    ]
-                )
-
-        # Adding these to make sure they are printed if provided by the environment.
-        environment["cli_args"]["CHRONON_DRIVER_JAR"] = params["chronon_jar"]
-        environment["cli_args"]["CHRONON_ONLINE_JAR"] = params["online_jar"]
-        environment["cli_args"]["CHRONON_ONLINE_CLASS"] = params["online_class"]
-        order = [
-            "conf_env",
-            "team_env",  # todo: team_env maybe should be below default/common_env
-            "production_team_env",
-            "default_env",
-            "common_env",
-            "cli_args",
-        ]
-        LOG.info("Setting env variables:")
-        for key in os.environ:
-            if any([key in (environment.get(set_key, {}) or {}) for set_key in order]):
-                LOG.info(f"From <environment> found {key}={os.environ[key]}")
-        for set_key in order:
-            for key, value in (environment.get(set_key, {}) or {}).items():
-                if key not in os.environ and value is not None:
-                    LOG.info(f"From <{set_key}> setting {key}={value}")
-                    os.environ[key] = value
-
-
-# TODO: delete this when we cutover
-def set_runtime_env_teams_json(environment, params, effective_mode, teams_json_file):
-    if os.path.exists(teams_json_file):
-        with open(teams_json_file, "r") as infile:
-            teams_json = json.load(infile)
-        # we should have a fallback if user wants to set to something else `default`
-        environment["common_env"] = teams_json.get("default", {}).get("common_env", {})
-        if params["conf"] and effective_mode:
-            try:
-                _, conf_type, team, _ = params["conf"].split("/")[-4:]
-            except Exception as e:
-                LOG.error(
-                    "Invalid conf path: {}, please ensure to supply the relative path to zipline/ folder".format(
-                        params["conf"]
-                    )
-                )
-                raise e
-            if not team:
-                team = "default"
-            # context is the environment in which the job is running, which is provided from the args,
-            # default to be dev.
-            if params["env"]:
-                context = params["env"]
-            else:
-                context = "dev"
-            LOG.info(f"Context: {context} -- conf_type: {conf_type} -- team: {team}")
-            conf_path = os.path.join(params["repo"], params["conf"])
-            if os.path.isfile(conf_path):
-                with open(conf_path, "r") as conf_file:
-                    conf_json = json.load(conf_file)
-
-                    new_env = (
-                        conf_json.get("metaData")
-                        .get("executionInfo", {})
-                        .get("env", {})
-                        .get(effective_mode, {})
-                    )
-
-                    old_env = (
-                        conf_json.get("metaData").get("modeToEnvMap", {}).get(effective_mode, {})
-                    )
-
-                    environment["conf_env"] = new_env if new_env else old_env
-
-                    # Load additional args used on backfill.
-                    if custom_json(conf_json) and effective_mode in [
-                        "backfill",
-                        "backfill-left",
-                        "backfill-final",
-                    ]:
-                        environment["conf_env"]["CHRONON_CONFIG_ADDITIONAL_ARGS"] = " ".join(
-                            custom_json(conf_json).get("additional_args", [])
-                        )
-                    environment["cli_args"]["APP_NAME"] = APP_NAME_TEMPLATE.format(
-                        mode=effective_mode,
-                        conf_type=conf_type,
-                        context=context,
-                        name=conf_json["metaData"]["name"],
-                    )
-                environment["team_env"] = teams_json[team].get(context, {}).get(effective_mode, {})
-                # fall-back to prod env even in dev mode when dev env is undefined.
-                environment["production_team_env"] = (
-                    teams_json[team].get("production", {}).get(effective_mode, {})
-                )
-                # By default use production env.
-                environment["default_env"] = (
-                    teams_json.get("default", {}).get("production", {}).get(effective_mode, {})
-                )
-                environment["cli_args"]["CHRONON_CONF_PATH"] = conf_path
-    if params["app_name"]:
-        environment["cli_args"]["APP_NAME"] = params["app_name"]
-    else:
-        if not params["app_name"] and not environment["cli_args"].get("APP_NAME"):
-            # Provide basic app_name when no conf is defined.
-            # Modes like metadata-upload and metadata-export can rely on conf-type or folder rather than a conf.
-            environment["cli_args"]["APP_NAME"] = "_".join(
-                [
-                    k
-                    for k in [
-                        "chronon",
-                        conf_type,
-                        params["mode"].replace("-", "_") if params["mode"] else None,
-                    ]
-                    if k is not None
-                ]
-            )
-
-    # Adding these to make sure they are printed if provided by the environment.
-    environment["cli_args"]["CHRONON_DRIVER_JAR"] = params["chronon_jar"]
-    environment["cli_args"]["CHRONON_ONLINE_JAR"] = params["online_jar"]
-    environment["cli_args"]["CHRONON_ONLINE_CLASS"] = params["online_class"]
-    order = [
-        "conf_env",
-        "team_env",
-        "production_team_env",
-        "default_env",
-        "common_env",
-        "cli_args",
-    ]
-    LOG.info("Setting env variables:")
-    for key in os.environ:
-        if any([key in environment[set_key] for set_key in order]):
-            LOG.info(f"From <environment> found {key}={os.environ[key]}")
-    for set_key in order:
-        for key, value in environment[set_key].items():
-            if key not in os.environ and value is not None:
-                LOG.info(f"From <{set_key}> setting {key}={value}")
-                os.environ[key] = value
 
 
 def split_date_range(start_date, end_date, parallelism):
@@ -508,6 +331,60 @@ def read_from_blob_store(remote_uri: str) -> str | None:
         return None
 
 
+def download_from_blob_store(remote_uri: str, local_path: str) -> None:
+    """Download a binary file from GCS, S3, or Azure Blob Storage to a local path.
+
+    Raises FileNotFoundError if the remote file does not exist.
+    """
+    if remote_uri.startswith("gs://"):
+        from google.cloud import storage
+
+        parts = remote_uri[len("gs://"):].split("/", 1)
+        bucket_name, blob_name = parts[0], parts[1] if len(parts) > 1 else ""
+        client = storage.Client()
+        blob = client.bucket(bucket_name).blob(blob_name)
+        blob.download_to_filename(local_path)
+    elif remote_uri.startswith("s3://"):
+        import boto3
+
+        parts = remote_uri[len("s3://"):].split("/", 1)
+        bucket_name, key = parts[0], parts[1] if len(parts) > 1 else ""
+        boto3.client("s3").download_file(bucket_name, key, local_path)
+    elif remote_uri.startswith("abfss://") or "blob.core.windows.net" in remote_uri:
+        _download_from_azure_blob(remote_uri, local_path)
+    elif os.path.exists(remote_uri):
+        import shutil
+        shutil.copy2(remote_uri, local_path)
+    else:
+        raise FileNotFoundError(f"Remote file not found: {remote_uri}")
+    LOG.info(f"Downloaded {remote_uri} -> {local_path}")
+
+
+def _download_from_azure_blob(remote_uri: str, local_path: str) -> None:
+    from azure.identity import DefaultAzureCredential
+    from azure.storage.blob import BlobServiceClient
+
+    if remote_uri.startswith("abfss://"):
+        # abfss://container@account.dfs.core.windows.net/path
+        without_scheme = remote_uri[len("abfss://"):]
+        container, rest = without_scheme.split("@", 1)
+        host, blob_name = rest.split("/", 1)
+        # Convert dfs.core.windows.net to blob.core.windows.net for the SDK
+        account_url = f"https://{host.replace('.dfs.core.windows.net', '.blob.core.windows.net')}"
+    else:
+        from urllib.parse import urlparse
+        parsed = urlparse(remote_uri)
+        account_url = f"{parsed.scheme}://{parsed.netloc}"
+        path_parts = parsed.path.lstrip("/").split("/", 1)
+        container = path_parts[0]
+        blob_name = path_parts[1] if len(path_parts) > 1 else ""
+
+    blob_service = BlobServiceClient(account_url=account_url, credential=DefaultAzureCredential())
+    blob_client = blob_service.get_blob_client(container=container, blob=blob_name)
+    with open(local_path, "wb") as f:
+        blob_client.download_blob().readinto(f)
+
+
 def upload_to_blob_store(local_path: str, remote_uri: str) -> str:
     """Upload a local file to GCS, S3, or Azure Blob Storage based on URI scheme.
 
@@ -567,6 +444,43 @@ def _upload_to_azure_blob(local_path: str, azure_uri: str) -> str:
         blob_client.upload_blob(f, overwrite=True)
     LOG.info(f"Uploaded {local_path} -> {azure_uri}")
     return azure_uri
+
+
+def resolve_conf(repo, conf):
+    """Resolve a conf path, automatically finding versioned conf files.
+
+    If the exact conf path exists, return it as-is. Otherwise, look for files
+    matching conf__<version> in the same directory. If exactly one match is found,
+    return the resolved conf path. Raises ValueError if multiple matches are found,
+    or returns the original conf unchanged if none are found (so downstream code
+    can raise the normal FileNotFoundError).
+    """
+    conf_path = os.path.join(repo, conf)
+    if os.path.isfile(conf_path):
+        return conf
+
+    conf_dir = os.path.dirname(conf_path)
+    basename = os.path.basename(conf_path)
+    prefix = basename + "__"
+
+    if not os.path.isdir(conf_dir):
+        return conf
+
+    matches = [
+        name for name in os.listdir(conf_dir)
+        if name.startswith(prefix) and name[len(prefix):].isdigit()
+    ]
+    if len(matches) == 1:
+        resolved = os.path.join(os.path.dirname(conf), matches[0])
+        LOG.info(f"Resolved conf '{conf}' -> '{resolved}'")
+        return resolved
+    elif len(matches) > 1:
+        raise ValueError(
+            f"Ambiguous conf '{conf}': found multiple versioned files in "
+            f"{style(conf_dir, fg='yellow')}:\n - " + "\n - ".join(sorted(matches))
+        )
+
+    return conf
 
 
 def print_possible_confs(conf, repo, *args, **kwargs):

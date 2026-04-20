@@ -156,7 +156,9 @@ object AvroKvEncoder {
       .toDF()
 
     if (storeSchemasPrefix.isDefined) {
-      val ts = System.currentTimeMillis()
+      // Use the max data tile timestamp (endDate midnight) so schema/metadata rows are co-located
+      // in time with the tiles they describe, rather than using wall-clock time.
+      val ts = dataDf.agg(org.apache.spark.sql.functions.max(tsColumn)).collect()(0).getLong(0)
       val schemaPrefix = storeSchemasPrefix.get
       logger.info(s"Using schema prefix: $schemaPrefix")
       val keyStr = s"$schemaPrefix${Constants.TimedKvRDDKeySchemaKey}"

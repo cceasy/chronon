@@ -1,19 +1,46 @@
-import inspect
 import json
+import logging
+import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
+
+from sqlglot import exp, parse_one
 
 import ai.chronon.airflow_helpers as airflow_helpers
 import gen_thrift.api.ttypes as ttypes
 import gen_thrift.common.ttypes as common
-from ai.chronon import query_utils, utils
-from ai.chronon.constants import AIRFLOW_DEPENDENCIES_KEY
+from ai.chronon import utils
+from ai.chronon.airflow_helpers import AIRFLOW_DEPENDENCIES_KEY
+
+logger = logging.getLogger(__name__)
+
+
+def _strip_jinja_templates(query: str) -> str:
+    """Replace Jinja-style template variables with placeholder values so sqlglot can parse the query."""
+    return re.sub(r"\{\{[^}]*\}\}", "2000-01-01", query)
+
+
+def _tables_in_query(query: str, dialect: str = "spark") -> List[str]:
+    """Get the tables referenced in a SQL query."""
+    clean_query = _strip_jinja_templates(query)
+    try:
+        parsed_query = parse_one(clean_query, dialect=dialect)
+    except Exception as e:
+        logger.warning("Failed to parse SQL for table extraction: %s", e)
+        return []
+    return [t.sql() for t in parsed_query.find_all(exp.Table)]
+
+
+def _normalize_table_name(table_name: str) -> str:
+    """Normalize a table name by stripping backticks and double quotes."""
+    return table_name.replace("`", "").replace('"', "")
 
 
 def _get_output_table_name(staging_query: ttypes.StagingQuery, full_name: bool = False):
     """generate output table name for staging query job"""
-    utils.__set_name(staging_query, ttypes.StagingQuery, "staging_queries")
-    return utils.output_table_name(staging_query, full_name=full_name)
+    return utils._ensure_name_and_get_output_table(
+        staging_query, ttypes.StagingQuery, "staging_queries", full_name
+    )
 
 
 # Wrapper for EngineType
@@ -128,14 +155,14 @@ def StagingQuery(
         A StagingQuery object
     """
     # Get caller's filename to assign team
-    team = inspect.stack()[1].filename.split("/")[-2]
+    team = utils._get_team_from_caller()
 
     assert version is None or isinstance(version, int), (
         f"Version must be an integer or None, but found {type(version).__name__}"
     )
     tables_in_query = [
-        query_utils.normalize_table_name(t)
-        for t in query_utils.tables_in_query(
+        _normalize_table_name(t)
+        for t in _tables_in_query(
             query,
             dialect=ttypes.EngineType._VALUES_TO_NAMES[engine_type].lower()
             if engine_type
@@ -147,9 +174,9 @@ def StagingQuery(
         spec_names = set()
         for d in dependencies:
             if isinstance(d, TableDependency):
-                spec_names.add(query_utils.normalize_table_name(d.table))
+                spec_names.add(_normalize_table_name(d.table))
             elif isinstance(d, dict):
-                spec_names.add(query_utils.normalize_table_name(d["spec"].split("/")[0]))
+                spec_names.add(_normalize_table_name(d["spec"].split("/")[0]))
         mismatch = set(tables_in_query) - set(spec_names)
         if mismatch:
             # There can be staging queries that run on top of views which are not handled as dependencies right now.

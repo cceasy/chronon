@@ -240,7 +240,56 @@ class ExternalSourceSensorIntegrationTest extends AnyFlatSpec with Matchers {
     }
   }
 
-  "ExternalSourceSensorUtil" should "handle root-level table dependencies correctly" in {
+  "ExternalSourceSensorUtil" should "override resource configs but preserve non-resource configs from downstream" in {
+    val tableDeps = Seq(createTableDependency("data.source_table"))
+
+    val conf = new ConfigProperties()
+    conf.setCommon(Map(
+      "spark.driver.memory" -> "8g",
+      "spark.driver.cores" -> "8",
+      "spark.executor.memory" -> "16g",
+      "spark.executor.cores" -> "8",
+      "spark.executor.instances" -> "100",
+      "spark.default.parallelism" -> "5000",
+      "spark.sql.shuffle.partitions" -> "10000",
+      "spark.chronon.partition.format" -> "yyyy-MM-dd",
+      "spark.chronon.table_write.format" -> "iceberg",
+      "spark.sql.catalog.spark_catalog.warehouse" -> "s3://my-bucket/warehouse/"
+    ).asJava)
+
+    val executionInfo = new ExecutionInfo()
+      .setTableDependencies(tableDeps.asJava)
+      .setOfflineSchedule("@daily")
+      .setConf(conf)
+
+    val metaData = new MetaData()
+      .setName("heavy_job")
+      .setTeam("test_team")
+      .setVersion("1")
+      .setOutputNamespace("test_namespace")
+      .setExecutionInfo(executionInfo)
+
+    val sensorNodes = ExternalSourceSensorUtil.sensorNodes(metaData)
+    sensorNodes should have size 1
+
+    val sensorConf = sensorNodes.head.metaData.executionInfo.conf.common.asScala
+
+    // Resource configs should be overridden to lightweight defaults
+    sensorConf("spark.driver.memory") should equal("1g")
+    sensorConf("spark.driver.cores") should equal("4")
+    sensorConf("spark.executor.memory") should equal("1g")
+    sensorConf("spark.executor.cores") should equal("4")
+    sensorConf("spark.executor.instances") should equal("1")
+    sensorConf("spark.default.parallelism") should equal("4")
+    sensorConf("spark.sql.shuffle.partitions") should equal("4")
+
+    // Non-resource configs should be preserved from downstream
+    sensorConf("spark.chronon.partition.format") should equal("yyyy-MM-dd")
+    sensorConf("spark.chronon.table_write.format") should equal("iceberg")
+    sensorConf("spark.sql.catalog.spark_catalog.warehouse") should equal("s3://my-bucket/warehouse/")
+  }
+
+  it should "handle root-level table dependencies correctly" in {
     // Test with deeply nested table names and complex scenarios
     val complexTableDeps = Seq(
       createTableDependency("production.events.user_actions"),

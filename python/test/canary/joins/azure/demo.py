@@ -1,10 +1,7 @@
 from group_bys.azure import dim_listings, dim_merchants, user_activities
 from staging_queries.azure import exports
 
-from ai.chronon.group_by import GroupBy
-from ai.chronon.join import Derivation, Join, JoinPart
-from ai.chronon.query import Query, selects
-from ai.chronon.source import EventSource
+from ai.chronon.types import Derivation, EventSource, GroupBy, Join, JoinPart, Query, selects
 
 """
 This Join combines user activity events with:
@@ -105,4 +102,18 @@ derivations_v3 = Join(
     online=True,
     output_namespace="data",
     step_days=30,
+)
+
+pc_v2 = Join(
+    left=dim_listings.pc_source,
+    row_ids=[], # TODO -- kill this once the SPJ API change goes through
+    right_parts=[
+        JoinPart(
+            group_by=dim_listings.pc_v3,
+        ),
+    ],
+    online=False,
+    output_namespace="data",
+    step_days=30,
+    enable_stats_compute=False,
 )

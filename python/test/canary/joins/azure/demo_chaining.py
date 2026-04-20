@@ -2,9 +2,7 @@ from group_bys.azure import user_activities_chained
 from joins.azure import demo_parent
 from staging_queries.azure import exports
 
-from ai.chronon.join import Derivation, Join, JoinPart
-from ai.chronon.query import Query, selects
-from ai.chronon.source import EventSource
+from ai.chronon.types import Derivation, EventSource, Join, JoinPart, Query, selects
 
 """
 Final Join in a chaining scenario that uses as its left source the

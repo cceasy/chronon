@@ -1,7 +1,10 @@
 package ai.chronon.spark.catalog
 
+import ai.chronon.api.PartitionSpec
 import ai.chronon.spark.utils.SparkTestBase
+import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
+import org.scalatest.matchers.should.Matchers._
 
 class FormatTest extends SparkTestBase {
 
@@ -10,6 +13,77 @@ class FormatTest extends SparkTestBase {
     "spark.sql.catalog.spark_non_default_catalog.type" -> "hadoop",
     "spark.sql.catalog.spark_non_default_catalog.warehouse" -> icebergWarehouse
   )
+
+  // --- resolvePartitionColumn hook ---
+
+  // Regression: formats like Snowflake discover the actual partition column from table metadata
+  // (e.g. a clustering key named ITEM_RECEIVED_DATE) and key their partitions() result maps by
+  // that column. The base primaryPartitions used the caller-provided column (e.g. "ds" from a
+  // dependency's TableInfo) for the map lookup, so the two would diverge and results would be empty.
+  it should "return empty when partitions() keys by a different column than the caller provides and no hook is overridden" in {
+    val fmt = new Format {
+      override def supportSubPartitionsFilter = false
+      // simulates a format that keys by the storage column name, ignoring the caller's partitionColumn
+      override def partitions(tableName: String, partitionFilters: String)(implicit ss: SparkSession) =
+        List(Map("ITEM_RECEIVED_DATE" -> "2023-01-01"), Map("ITEM_RECEIVED_DATE" -> "2023-01-02"))
+    }
+    fmt.primaryPartitions("db.table", "ds", "")(spark) shouldBe empty
+  }
+
+  it should "return results when resolvePartitionColumn remaps the caller column to the stored key" in {
+    val fmt = new Format {
+      override def supportSubPartitionsFilter = false
+      override def partitions(tableName: String, partitionFilters: String)(implicit ss: SparkSession) =
+        List(Map("ITEM_RECEIVED_DATE" -> "2023-01-01"), Map("ITEM_RECEIVED_DATE" -> "2023-01-02"))
+      // simulates resolving "ds" → "ITEM_RECEIVED_DATE" via table metadata lookup
+      override protected def resolvePartitionColumn(tableName: String, partitionColumn: String)(implicit
+          ss: SparkSession) =
+        "ITEM_RECEIVED_DATE"
+    }
+    fmt.primaryPartitions("db.table", "ds", "")(spark) shouldBe List("2023-01-01", "2023-01-02")
+  }
+
+  it should "apply subPartitionsFilter correctly when using a resolved partition column" in {
+    val fmt = new Format {
+      override def supportSubPartitionsFilter = true
+      override def partitions(tableName: String, partitionFilters: String)(implicit ss: SparkSession) =
+        List(
+          Map("ITEM_RECEIVED_DATE" -> "2023-01-01", "hr" -> "12"),
+          Map("ITEM_RECEIVED_DATE" -> "2023-01-01", "hr" -> "13"),
+          Map("ITEM_RECEIVED_DATE" -> "2023-01-02", "hr" -> "12")
+        )
+      override protected def resolvePartitionColumn(tableName: String, partitionColumn: String)(implicit
+          ss: SparkSession) =
+        "ITEM_RECEIVED_DATE"
+    }
+    fmt.primaryPartitions("db.table", "ds", "", subPartitionsFilter = Map("hr" -> "12"))(spark) shouldBe
+      List("2023-01-01", "2023-01-02")
+  }
+
+  it should "fall back to a table scan when metadata partitions are null" in {
+    val tableName = "format_null_metadata_fallback_test"
+    spark.sql(s"""
+      CREATE OR REPLACE TEMP VIEW $tableName AS
+      SELECT * FROM VALUES
+        (1, '2024-04-01'),
+        (2, '2024-04-03'),
+        (3, '2024-04-02')
+      AS t(id, ds)
+    """)
+
+    val fmt = new Format {
+      override def supportSubPartitionsFilter = false
+      override def partitions(tableName: String, partitionFilters: String)(implicit ss: SparkSession) = Nil
+      override def primaryPartitions(tableName: String,
+                                     partitionColumn: String,
+                                     partitionFilters: String,
+                                     subPartitionsFilter: Map[String, String])(implicit
+          ss: SparkSession) = List(null)
+    }
+
+    fmt.firstAvailablePartition(tableName, "ds", PartitionSpec.daily)(spark) shouldBe Some("2024-04-01")
+    fmt.lastAvailablePartition(tableName, "ds", PartitionSpec.daily)(spark) shouldBe Some("2024-04-03")
+  }
 
   it should "resolve table names consistently with Spark SQL" in {
     spark.sql("CREATE DATABASE IF NOT EXISTS spark_non_default_catalog.custom_test_db")

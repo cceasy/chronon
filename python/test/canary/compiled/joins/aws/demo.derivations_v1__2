@@ -49,7 +49,7 @@
           "executionInfo": {
             "clusterConf": {
               "common": {
-                "emr.config": "{\"releaseLabel\": \"emr-7.12.0\", \"instanceType\": \"m5.xlarge\", \"instanceCount\": 3, \"autoTerminationPolicy\": {\"idleTimeout\": 300}, \"subnetName\": \"zipline-canary-subnet-main\", \"securityGroupName\": \"zipline-canary-sg\"}"
+                "emr.config": "{\"releaseLabel\": \"emr-7.12.0\", \"instanceType\": \"m5.xlarge\", \"instanceCount\": 3, \"autoTerminationPolicy\": {\"idleTimeout\": 7200}, \"subnetName\": \"zipline-canary-subnet-main\", \"securityGroupName\": \"zipline-canary-sg\"}"
               }
             },
             "conf": {
@@ -134,7 +134,7 @@
             },
             "historicalBackfill": 0,
             "onlineSchedule": "@daily",
-            "stepDays": 30
+            "stepDays": 10
           },
           "name": "aws.dim_listings.v1__0",
           "online": 1,
@@ -567,7 +567,7 @@
           "executionInfo": {
             "clusterConf": {
               "common": {
-                "emr.config": "{\"releaseLabel\": \"emr-7.12.0\", \"instanceType\": \"m5.xlarge\", \"instanceCount\": 3, \"autoTerminationPolicy\": {\"idleTimeout\": 300}, \"subnetName\": \"zipline-canary-subnet-main\", \"securityGroupName\": \"zipline-canary-sg\"}"
+                "emr.config": "{\"releaseLabel\": \"emr-7.12.0\", \"instanceType\": \"m5.xlarge\", \"instanceCount\": 3, \"autoTerminationPolicy\": {\"idleTimeout\": 7200}, \"subnetName\": \"zipline-canary-subnet-main\", \"securityGroupName\": \"zipline-canary-sg\"}"
               }
             },
             "conf": {
@@ -652,7 +652,7 @@
             },
             "historicalBackfill": 0,
             "onlineSchedule": "@daily",
-            "stepDays": 30
+            "stepDays": 10
           },
           "name": "aws.user_activities.v1__1",
           "online": 1,
@@ -789,7 +789,7 @@
     "executionInfo": {
       "clusterConf": {
         "common": {
-          "emr.config": "{\"releaseLabel\": \"emr-7.12.0\", \"instanceType\": \"m5.xlarge\", \"instanceCount\": 3, \"autoTerminationPolicy\": {\"idleTimeout\": 300}, \"subnetName\": \"zipline-canary-subnet-main\", \"securityGroupName\": \"zipline-canary-sg\"}"
+          "emr.config": "{\"releaseLabel\": \"emr-7.12.0\", \"instanceType\": \"m5.xlarge\", \"instanceCount\": 3, \"autoTerminationPolicy\": {\"idleTimeout\": 7200}, \"subnetName\": \"zipline-canary-subnet-main\", \"securityGroupName\": \"zipline-canary-sg\"}"
         }
       },
       "conf": {
@@ -875,7 +875,7 @@
       },
       "offlineSchedule": "@daily",
       "onlineSchedule": "@daily",
-      "stepDays": 30
+      "stepDays": 10
     },
     "name": "aws.demo.derivations_v1__2",
     "online": 1,

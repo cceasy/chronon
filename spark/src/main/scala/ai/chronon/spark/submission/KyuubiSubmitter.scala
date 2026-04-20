@@ -63,17 +63,16 @@ object KyuubiUtils {
       .map(entry => (formatLabel(entry._1), formatLabel(entry._2)))
   }
 
-  /** Generate a unique job name.
+  /** Generate a deterministic job name.
     *
     * @param metadataName The metadata name
     * @param jobType The job type
-    * @return A unique job name with timestamp
+    * @return A deterministic job name
     */
   def generateJobName(metadataName: String, jobType: JobType): String = {
-    val timestamp = System.currentTimeMillis()
     val typePrefix = jobTypeToBatchType(jobType).toLowerCase
     val sanitizedName = formatLabel(metadataName)
-    s"$typePrefix-$sanitizedName-$timestamp"
+    s"$typePrefix-$sanitizedName"
   }
 }
 

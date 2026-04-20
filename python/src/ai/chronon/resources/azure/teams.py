@@ -1,6 +1,5 @@
 from ai.chronon.repo.constants import RunMode
-from ai.chronon.types import ConfigProperties, EnvironmentVariables
-from gen_thrift.api.ttypes import Team
+from ai.chronon.types import ConfigProperties, EnvironmentVariables, Team
 
 default = Team(
     description="Default team",

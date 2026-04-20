@@ -23,10 +23,21 @@ object KinesisConfig {
     val InitialPosition = "initial_position"
     val EnableEfo = "enable_efo"
     val EfoConsumerName = "efo_consumer_name"
+    val GetRecordsRetries = "getrecords_retries"
+    val GetRecordsBackoffBase = "getrecords_backoff_base_ms"
+    val GetRecordsBackoffMax = "getrecords_backoff_max_ms"
+    val GetRecordsIntervalMillis = "getrecords_interval_ms"
   }
 
   object Defaults {
     val InitialPosition: String = ConsumerConfigConstants.InitialPosition.LATEST.toString
+    // Flink's default is 3 — too low for sparse streams where transient throttling exhausts retries
+    val GetRecordsRetries = "10"
+    val GetRecordsBackoffBase = "1000"
+    val GetRecordsBackoffMax = "30000"
+    val GetRecordsBackoffExponentialConstant = "1.5"
+    // Flink default polls as fast as possible; throttle to avoid burning retries on empty shards
+    val GetRecordsIntervalMillis = "1000"
   }
 
   def buildConsumerConfig(props: Map[String, String], topicInfo: TopicInfo): ConsumerConfig = {
@@ -80,6 +91,25 @@ object KinesisConfig {
     endpoint.foreach(properties.setProperty(AWSConfigConstants.AWS_ENDPOINT, _))
     publisherType.foreach(properties.setProperty(ConsumerConfigConstants.RECORD_PUBLISHER_TYPE, _))
     efoConsumerName.foreach(properties.setProperty(ConsumerConfigConstants.EFO_CONSUMER_NAME, _))
+
+    // EFO uses a push model and has its own retry logic; these settings only apply to polling consumers.
+    // Sparse streams are especially prone to exhausting Flink's default 3-retry limit on transient
+    // ProvisionedThroughputExceededExceptions, so we raise retries and add a polling interval to avoid
+    // hammering empty shards.
+    val isEfo = publisherType.contains(ConsumerConfigConstants.RecordPublisherType.EFO.toString)
+    if (!isEfo) {
+      val getRecordsRetries = lookup.optional(Keys.GetRecordsRetries).getOrElse(Defaults.GetRecordsRetries)
+      val backoffBase = lookup.optional(Keys.GetRecordsBackoffBase).getOrElse(Defaults.GetRecordsBackoffBase)
+      val backoffMax = lookup.optional(Keys.GetRecordsBackoffMax).getOrElse(Defaults.GetRecordsBackoffMax)
+      val intervalMs = lookup.optional(Keys.GetRecordsIntervalMillis).getOrElse(Defaults.GetRecordsIntervalMillis)
+
+      properties.setProperty(ConsumerConfigConstants.SHARD_GETRECORDS_RETRIES, getRecordsRetries)
+      properties.setProperty(ConsumerConfigConstants.SHARD_GETRECORDS_BACKOFF_BASE, backoffBase)
+      properties.setProperty(ConsumerConfigConstants.SHARD_GETRECORDS_BACKOFF_MAX, backoffMax)
+      properties.setProperty(ConsumerConfigConstants.SHARD_GETRECORDS_BACKOFF_EXPONENTIAL_CONSTANT,
+                             Defaults.GetRecordsBackoffExponentialConstant)
+      properties.setProperty(ConsumerConfigConstants.SHARD_GETRECORDS_INTERVAL_MILLIS, intervalMs)
+    }
 
     ConsumerConfig(properties, explicitParallelism)
   }
