@@ -159,12 +159,22 @@ class Fetcher(val kvStore: KVStore,
               callerName: String = null,
               flagStore: FlagStore = null,
               disableErrorThrows: Boolean = false,
-              executionContextOverride: ExecutionContext = null) {
+              executionContextOverride: ExecutionContext = null,
+              joinConfTtlMillis: Long = TTLCache.DefaultTtlMillis,
+              joinCodecTtlMillis: Long = TTLCache.DefaultTtlMillis) {
 
   @transient implicit lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
   private val fetchContext: FetchContext =
-    FetchContext(kvStore, metaDataSet, timeoutMillis, debug, flagStore, disableErrorThrows, executionContextOverride)
+    FetchContext(kvStore,
+                 metaDataSet,
+                 timeoutMillis,
+                 debug,
+                 flagStore,
+                 disableErrorThrows,
+                 executionContextOverride,
+                 joinConfTtlMillis,
+                 joinCodecTtlMillis)
 
   implicit private val executionContext: ExecutionContext = fetchContext.getOrCreateExecutionContext
   val metadataStore: MetadataStore = new MetadataStore(fetchContext)

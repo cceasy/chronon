@@ -113,7 +113,8 @@ class MetadataStore(fetchContext: FetchContext) {
     { join =>
       import ai.chronon.online.metrics
       metrics.Metrics.Context(environment = "join.meta.fetch", join = join)
-    }
+    },
+    ttlMillis = fetchContext.joinConfTtlMillis
   )
 
   def putJoinConf(join: Join): Future[Boolean] = {
@@ -275,6 +276,7 @@ class MetadataStore(fetchContext: FetchContext) {
         import ai.chronon.online.metrics
         metrics.Metrics.Context(environment = "join.codec.fetch", join = join)
       },
+      ttlMillis = fetchContext.joinCodecTtlMillis,
       onCreateFunc = onCreateFunc
     )
   }
