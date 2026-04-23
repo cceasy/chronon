@@ -35,16 +35,24 @@ trait Resolution extends Serializable {
   val hopSizes: Array[Long]
 }
 
-object FiveMinuteResolution extends Resolution {
+object DefaultResolution extends Resolution {
   def calculateTailHop(window: Window): Long =
     window.millis match {
       case x if x >= new Window(12, TimeUnit.DAYS).millis  => WindowUtils.Day.millis
       case x if x >= new Window(12, TimeUnit.HOURS).millis => WindowUtils.Hour.millis
-      case _                                               => WindowUtils.FiveMinutes
+      case x if x >= new Window(1, TimeUnit.HOURS).millis  => WindowUtils.FiveMinutes
+      case _                                               => WindowUtils.OneMinute
     }
 
   val hopSizes: Array[Long] =
-    Array(WindowUtils.Day.millis, WindowUtils.Hour.millis, WindowUtils.FiveMinutes)
+    Array(WindowUtils.Day.millis, WindowUtils.Hour.millis, WindowUtils.FiveMinutes, WindowUtils.OneMinute)
+}
+
+// Backwards-compatible alias
+@deprecated("Use DefaultResolution instead", "")
+object FiveMinuteResolution extends Resolution {
+  def calculateTailHop(window: Window): Long = DefaultResolution.calculateTailHop(window)
+  val hopSizes: Array[Long] = DefaultResolution.hopSizes
 }
 
 object DailyResolution extends Resolution {
@@ -65,7 +73,7 @@ object DailyResolution extends Resolution {
 object ResolutionUtils {
 
   /** Find the smallest tail window resolution in a GroupBy. Returns 1D if the GroupBy does not define any windows (all-time aggregates).
-    * The window resolutions are: 5 min for a GroupBy a window < 12 hrs, 1 hr for < 12 days, 1 day for > 12 days.
+    * The window resolutions are: 1 min for windows < 1 hr, 5 min for < 12 hrs, 1 hr for < 12 days, 1 day for >= 12 days.
     */
   def getSmallestTailHopMillis(groupBy: GroupBy): Long = {
 
@@ -76,7 +84,7 @@ object ResolutionUtils {
         windows <- Option(agg.windows).toSeq;
         window <- windows.iterator().toScala
       ) yield {
-        FiveMinuteResolution.calculateTailHop(window)
+        DefaultResolution.calculateTailHop(window)
       }
 
     if (tailHops.isEmpty) WindowUtils.Day.millis
