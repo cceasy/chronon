@@ -104,7 +104,7 @@ def _group_by_has_topic(groupBy: GroupBy) -> bool:
     return any(_source_has_topic(source) for source in groupBy.sources)
 
 
-def _group_by_has_hourly_windows(groupBy: GroupBy) -> bool:
+def _group_by_has_sub_daily_windows(groupBy: GroupBy) -> bool:
     aggs: List[Aggregation] = groupBy.aggregations
 
     if not aggs:
@@ -115,7 +115,7 @@ def _group_by_has_hourly_windows(groupBy: GroupBy) -> bool:
             return False
 
         for window in agg.windows:
-            if window.timeUnit == common.TimeUnit.HOURS:
+            if window.timeUnit in (common.TimeUnit.HOURS, common.TimeUnit.MINUTES):
                 return True
 
     return False
@@ -516,14 +516,14 @@ class ConfValidator(object):
         non_temporal = group_by.accuracy is None or group_by.accuracy == Accuracy.SNAPSHOT
 
         no_topic = not _group_by_has_topic(group_by)
-        has_hourly_windows = _group_by_has_hourly_windows(group_by)
+        has_sub_daily_windows = _group_by_has_sub_daily_windows(group_by)
 
-        # batch features cannot contain hourly windows
-        if (no_topic and non_temporal) and has_hourly_windows:
+        # batch features cannot contain sub-daily windows (hourly or minute-level)
+        if (no_topic and non_temporal) and has_sub_daily_windows:
             errors.append(
                 ValueError(
                     f"group_by {group_by.metaData.name} is defined to be daily refreshed but contains "
-                    f"hourly windows. "
+                    f"sub-daily windows. "
                 )
             )
 

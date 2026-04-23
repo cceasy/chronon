@@ -11,12 +11,16 @@ def _hours(length: int) -> common.Window:
     return common.Window(length=length, timeUnit=common.TimeUnit.HOURS)
 
 
+def _minutes(length: int) -> common.Window:
+    return common.Window(length=length, timeUnit=common.TimeUnit.MINUTES)
+
+
 def _from_str(s: str) -> common.Window:
     """
-    converts strings like "30d", "2h" etc into common.Window
+    converts strings like "30d", "2h", "15m" etc into common.Window
 
     Args:
-        s (str): Duration string in format "<number>(d|h)" where d=days, h=hours
+        s (str): Duration string in format "<number>(d|h|m)" where d=days, h=hours, m=minutes
 
     Returns:
         common.Window: Window object with specified duration
@@ -41,8 +45,10 @@ def _from_str(s: str) -> common.Window:
             return _days(length)
         elif unit == "h":
             return _hours(length)
+        elif unit == "m":
+            return _minutes(length)
         else:
-            raise ValueError(f"Invalid time unit '{unit}'. Must be 'd' for days or 'h' for hours")
+            raise ValueError(f"Invalid time unit '{unit}'. Must be 'd' for days, 'h' for hours, or 'm' for minutes")
 
     except ValueError as e:
         if "invalid literal for int()" in str(e):
@@ -54,11 +60,11 @@ def normalize_window(w: Union[common.Window, str]) -> common.Window:
     """
     Normalizes a window specification to a common.Window object.
 
-    Accepts either a Window object directly or a string like "30d" or "24h".
+    Accepts either a Window object directly or a string like "30d", "24h", or "15m".
     This is used across the codebase (e.g., in GroupBy aggregations and TrainingSpec).
 
     Args:
-        w: Either a common.Window object or a string like "7d", "24h"
+        w: Either a common.Window object or a string like "7d", "24h", "15m"
 
     Returns:
         common.Window: The normalized window object
@@ -72,6 +78,6 @@ def normalize_window(w: Union[common.Window, str]) -> common.Window:
         return w
     else:
         raise TypeError(
-            f"Window should be either a string like '7d', '24h', or a Window type, "
+            f"Window should be either a string like '7d', '24h', '15m', or a Window type, "
             f"got {type(w).__name__}"
         )

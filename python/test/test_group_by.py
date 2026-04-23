@@ -40,6 +40,11 @@ def hours_unit():
     return common.TimeUnit.HOURS
 
 
+@pytest.fixture
+def minutes_unit():
+    return common.TimeUnit.MINUTES
+
+
 def event_source(table):
     """
     Sample left join
@@ -71,7 +76,7 @@ def entity_source(snapshotTable, mutationTable):
     )
 
 
-def test_pretty_window_str(days_unit, hours_unit):
+def test_pretty_window_str(days_unit, hours_unit, minutes_unit):
     """
     Test pretty window utils.
     """
@@ -79,6 +84,8 @@ def test_pretty_window_str(days_unit, hours_unit):
     assert group_by.window_to_str_pretty(window) == "7 days"
     window = common.Window(length=2, timeUnit=hours_unit)
     assert group_by.window_to_str_pretty(window) == "2 hours"
+    window = common.Window(length=15, timeUnit=minutes_unit)
+    assert group_by.window_to_str_pretty(window) == "15 minutes"
 
 
 def test_pretty_operation_str(sum_op, min_op):
@@ -306,6 +313,68 @@ def test_windows_as_strings():
     assert windows[1] == common.Window(30, common.TimeUnit.DAYS)
 
     assert gb.metaData.tags["to_deprecate"]
+
+
+def test_windows_as_strings_with_minutes():
+    gb = group_by.GroupBy(
+        sources=[
+            ttypes.EventSource(
+                table="event_table1",
+                query=ttypes.Query(
+                    selects={"key1": "key1", "key2": "key2", "event_id": "event_id"},
+                    timeColumn="ts",
+                    startPartition="2020-04-09",
+                ),
+            )
+        ],
+        keys=["key1", "key2"],
+        aggregations=[
+            group_by.Aggregation(
+                input_column="event_id",
+                operation=ttypes.Operation.SUM,
+                windows=["15m", "1h", "30d"],
+            )
+        ],
+        version=0,
+        accuracy=group_by.Accuracy.TEMPORAL,
+    )
+
+    windows = gb.aggregations[0].windows
+
+    assert len(windows) == 3
+    assert windows[0] == common.Window(15, common.TimeUnit.MINUTES)
+    assert windows[1] == common.Window(1, common.TimeUnit.HOURS)
+    assert windows[2] == common.Window(30, common.TimeUnit.DAYS)
+
+
+def test_minutes_window_rejected_for_snapshot_accuracy():
+    with pytest.raises(AssertionError, match="sub-daily"):
+        group_by.GroupBy(
+            sources=[
+                ttypes.EventSource(
+                    table="event_table1",
+                    query=ttypes.Query(
+                        selects={"key1": "key1", "event_id": "event_id"},
+                        timeColumn="ts",
+                        startPartition="2020-04-09",
+                    ),
+                )
+            ],
+            keys=["key1"],
+            aggregations=[
+                group_by.Aggregation(
+                    input_column="event_id",
+                    operation=ttypes.Operation.COUNT,
+                    windows=["15m"],
+                )
+            ],
+            accuracy=group_by.Accuracy.SNAPSHOT,
+        )
+
+
+def test_time_unit_has_minutes():
+    assert group_by.TimeUnit.MINUTES == common.TimeUnit.MINUTES
+
 
 def test_query_api_obj():
     selects_map = {
