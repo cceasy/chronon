@@ -251,6 +251,7 @@ def DefaultAggregation(keys, sources, operation=Operation.LAST, tags=None):
 class TimeUnit:
     HOURS = common.TimeUnit.HOURS
     DAYS = common.TimeUnit.DAYS
+    MINUTES = common.TimeUnit.MINUTES
 
 
 def window_to_str_pretty(window: common.Window):
@@ -281,8 +282,8 @@ def Aggregation(
         Defaults to "LAST".
     :type operation: ttypes.Operation
     :param windows:
-        Length to window to calculate the aggregates on. Strings like "1h", "30d" are also accepted.
-        Minimum window size is 1hr. Maximum can be arbitrary. When not defined, the computation is un-windowed.
+        Length to window to calculate the aggregates on. Strings like "15m", "1h", "30d" are also accepted.
+        Sub-daily windows (minutes/hours) require temporal accuracy. When not defined, the computation is un-windowed.
     :type windows: List[common.Window]
     :param buckets:
         Besides the GroupBy.keys, this is another level of keys for use under this aggregation.
@@ -430,11 +431,11 @@ Keys {unselected_keys}, are unselected in source
                     # Snapshot accuracy.
                     (group_by.accuracy and group_by.accuracy == Accuracy.SNAPSHOT)
                     and
-                    # Hourly aggregation.
-                    any([window.timeUnit == TimeUnit.HOURS for window in agg.windows])
+                    # Sub-daily aggregation (hourly or minute-level).
+                    any([window.timeUnit in (TimeUnit.HOURS, TimeUnit.MINUTES) for window in agg.windows])
                 ), (
-                    "Detected a snapshot accuracy group by with an hourly aggregation. Resolution with snapshot "
-                    "accuracy is not fine enough to allow hourly group bys. Consider adjusting the aggregation window. "
+                    "Detected a snapshot accuracy group by with a sub-daily aggregation. Resolution with snapshot "
+                    "accuracy is not fine enough to allow sub-daily group bys. Consider adjusting the aggregation window. "
                     f"input_column: {agg.inputColumn}, windows: {agg.windows}"
                 )
 
