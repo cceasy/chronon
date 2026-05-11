@@ -3,7 +3,7 @@ import glob
 import importlib
 import os
 import sys
-from typing import Any, List
+from typing import Any, Dict, List, Set
 
 from ai.chronon import airflow_helpers
 from ai.chronon.cli.compile import parse_teams, serializer
@@ -15,65 +15,116 @@ from gen_thrift.api.ttypes import GroupBy, Join
 logger = get_logger()
 
 
-def from_folder(cls: type, input_dir: str, compile_context: CompileContext) -> List[CompiledObj]:
+def from_folder(target_classes: List[type], input_dir: str, compile_context: CompileContext) -> Dict[type, List[CompiledObj]]:
     """
     Recursively consumes a folder, and constructs a map of
-    object qualifier to StagingQuery, GroupBy, or Join
+    object qualifier to StagingQuery, GroupBy, or Join.
+    Supports multiple target classes in a single scan.
     """
 
     python_files = glob.glob(os.path.join(input_dir, "**/*.py"), recursive=True)
+    # Visit shallowest paths first, then alphabetical within depth. Combined
+    # with the dependency-ordered CONFIG_INFOS in CompileContext, this keeps
+    # "first sighting" == "canonical file" for the id()-based dedup in
+    # from_file: a utility module like joins/util.py is processed before
+    # joins/team/data.py that imports from it.
+    python_files.sort(key=lambda p: (p.count(os.sep), p))
 
-    results = []
+    # Results keyed by class type
+    results = {cls: [] for cls in target_classes}
 
     for f in python_files:
         try:
-            results_dict = from_file(f, cls, input_dir)
+            # Get objects of all target types from this file
+            multi_type_results = from_file(
+                f, target_classes, input_dir, compile_context.seen_obj_ids
+            )
 
-            for name, obj in results_dict.items():
-                parse_teams.update_metadata(obj, compile_context.teams_dict)
-                # Populate columnHashes field with semantic hashes
-                populate_column_hashes(obj)
+            # Process each type's results
+            for target_cls, objects_dict in multi_type_results.items():
+                for name, obj in objects_dict.items():
+                    parse_teams.update_metadata(obj, compile_context.teams_dict)
+                    # Populate columnHashes field with semantic hashes
+                    populate_column_hashes(obj)
 
-                # Airflow deps must be set AFTER updating metadata
-                airflow_helpers.set_airflow_deps(obj)
+                    # Airflow deps must be set AFTER updating metadata
+                    airflow_helpers.set_airflow_deps(obj)
 
-                obj.metaData.sourceFile = os.path.relpath(f, compile_context.chronon_root)
+                    obj.metaData.sourceFile = os.path.relpath(f, compile_context.chronon_root)
 
-                tjson = serializer.thrift_simple_json(obj)
+                    tjson = serializer.thrift_simple_json(obj)
 
-                # Perform validation
-                errors = compile_context.validator.validate_obj(obj)
+                    # Perform validation
+                    errors = compile_context.validator.validate_obj(obj)
 
-                result = CompiledObj(
-                    name=name,
-                    obj=obj,
-                    file=f,
-                    errors=errors if len(errors) > 0 else None,
-                    obj_type=cls.__name__,
-                    tjson=tjson,
-                )
-                results.append(result)
+                    # Use actual object type, not target class
+                    actual_type = type(obj).__name__
 
-                compile_context.compile_status.add_object_update_display(result, cls.__name__)
+                    result = CompiledObj(
+                        name=name,
+                        obj=obj,
+                        file=f,
+                        errors=errors if len(errors) > 0 else None,
+                        obj_type=actual_type,
+                        tjson=tjson,
+                    )
+                    results[target_cls].append(result)
+
+                    compile_context.compile_status.add_object_update_display(result, actual_type)
 
         except Exception as e:
+            # Attribute import errors to first target class
             result = CompiledObj(
                 name=None,
                 obj=None,
                 file=f,
                 errors=[e],
-                obj_type=cls.__name__,
+                obj_type=target_classes[0].__name__,
                 tjson=None,
             )
 
-            results.append(result)
+            results[target_classes[0]].append(result)
 
-            compile_context.compile_status.add_object_update_display(result, cls.__name__)
+            compile_context.compile_status.add_object_update_display(result, target_classes[0].__name__)
 
     return results
 
 
-def from_file(file_path: str, cls: type, input_dir: str):
+def from_file(
+    file_path: str,
+    target_classes: List[type],
+    input_dir: str,
+    seen_obj_ids: Set[int],
+) -> Dict[type, Dict[str, Any]]:
+    """
+    Extract config objects from a Python file.
+    Supports extracting multiple config types from a single file.
+
+    `seen_obj_ids` carries object identities across all files in the compile
+    run. The first file we encounter an object in becomes its canonical
+    location; any later file that imports the same object will see its id()
+    already in the set and skip it. This is what prevents duplicate-config
+    errors when a Join file imports a GroupBy — both files have the GroupBy
+    in their `module.__dict__`, but only the file scanned first claims it.
+
+    Scan order is enforced by:
+      - `CONFIG_INFOS` in compile_context — dependency-first (group_bys
+        before joins, etc.), so an imported config's home directory is
+        visited before any directory that might import from it.
+      - `from_folder` — shallowest path first, alphabetical within depth,
+        so utility modules win over the team-specific files that import
+        from them.
+
+    Args:
+        file_path: Path to the Python file to parse
+        target_classes: List of config classes to search for (e.g., [GroupBy, Join])
+        input_dir: Root directory for the config type
+        seen_obj_ids: Mutable set of id()s for objects already claimed by an
+            earlier file in this compile run. Updated in place.
+
+    Returns:
+        Nested dict: {GroupBy: {name: obj}, Join: {name: obj}, ...}
+    """
     # this is where the python path should have been set to
     chronon_root = os.path.dirname(input_dir)
     rel_path = os.path.relpath(file_path, chronon_root)
@@ -102,22 +153,35 @@ def from_file(file_path: str, cls: type, input_dir: str):
             delattr(parent, child_name)
         raise ValueError(f"Error parsing {os.path.relpath(file_path)}: {e}") from None
 
-    result = {}
+    # Results keyed by class type
+    result = {cls: {} for cls in target_classes}
 
     for var_name, obj in list(module.__dict__.items()):
-        if isinstance(obj, cls):
-            copied_obj = copy.deepcopy(obj)
+        # Check if object is an instance of any target class
+        for target_cls in target_classes:
+            if isinstance(obj, target_cls):
+                # Identity dedup: an imported config object appears in
+                # `module.__dict__` of every file that imports it. Only the
+                # first file to see it (via the dependency-ordered scan)
+                # should compile it; later sightings are imports and get
+                # skipped here.
+                if id(obj) in seen_obj_ids:
+                    break
+                seen_obj_ids.add(id(obj))
 
-            name = f"{mod_path}.{var_name}"
+                copied_obj = copy.deepcopy(obj)
 
-            # Add version suffix if version is set
-            if copied_obj.metaData.version is not None:
-                name = name + "__" + str(copied_obj.metaData.version)
+                name = f"{mod_path}.{var_name}"
 
-            copied_obj.metaData.name = name
-            copied_obj.metaData.team = mod_path.split(".")[0]
+                # Add version suffix if version is set
+                if copied_obj.metaData.version is not None:
+                    name = name + "__" + str(copied_obj.metaData.version)
 
-            result[name] = copied_obj
+                copied_obj.metaData.name = name
+                copied_obj.metaData.team = mod_path.split(".")[0]
+
+                result[target_cls][name] = copied_obj
+                break  # Each object belongs to only one type
 
     return result
 
