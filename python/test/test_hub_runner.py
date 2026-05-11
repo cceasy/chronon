@@ -77,6 +77,7 @@ class TestHubRunner:
             '--no-use-auth',
             '--start-ds', '2024-01-15',
             '--end-ds', '2024-02-15',
+            '--concurrency', '250',
         ])
 
         assert result.exit_code == 0
@@ -95,6 +96,7 @@ class TestHubRunner:
         assert json_payload['start'] == "2024-01-15"
         assert json_payload['end'] == "2024-02-15"
         assert json_payload['branch'] == "test-branch"
+        assert json_payload['workflowConcurrency'] == 250
 
         # Check headers
         headers = call_args[1]['headers']

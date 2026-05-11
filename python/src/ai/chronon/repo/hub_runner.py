@@ -299,6 +299,16 @@ def end_ds_option(func):
     return wrapper
 
 
+def workflow_concurrency_option(func):
+    return click.option(
+        "--concurrency",
+        "workflow_concurrency",
+        type=click.IntRange(min=1),
+        default=None,
+        help="Max workflow steps Hub may allocate concurrently for this workflow.",
+    )(func)
+
+
 def _get_zipline_hub(
     hub_url: Optional[str],
     hub_conf: HubConfig,
@@ -512,6 +522,7 @@ def submit_workflow(
     hub_url=None,
     use_auth=True,
     format: Format = Format.TEXT,
+    workflow_concurrency=None,
 ):
     hub_conf = get_hub_conf(conf, root_dir=repo)
     zipline_hub = _get_zipline_hub(hub_url, hub_conf, use_auth, format)
@@ -541,6 +552,7 @@ def submit_workflow(
             end=end_ds,
             conf_hash=conf_name_to_hash_dict[conf_name].hash,
             skip_long_running=False,
+            concurrency=workflow_concurrency,
         )
 
     workflow_id = response_json.get("workflowId", "N/A")
@@ -551,6 +563,8 @@ def submit_workflow(
     print_key_value("🆔 Workflow ID", workflow_id, format=format)
     print_key_value("📦 Conf", conf_name, format=format)
     print_key_value("⚙️  Mode", mode, format=format)
+    if workflow_concurrency is not None:
+        print_key_value("Concurrency", workflow_concurrency, format=format)
     print_wf_url(
         conf=conf,
         conf_name=conf_name,
@@ -615,6 +629,7 @@ def submit_schedule(
 @common_options
 @start_ds_option
 @end_ds_option
+@workflow_concurrency_option
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
 @handle_compile
 @jsonify_exceptions_if_json_format
@@ -627,6 +642,7 @@ def backfill(
     force,
     start_ds,
     end_ds,
+    workflow_concurrency,
     assume_yes,
     skip_compile,
 ):
@@ -643,6 +659,7 @@ def backfill(
         hub_url=hub_url,
         use_auth=use_auth,
         format=format,
+        workflow_concurrency=workflow_concurrency,
     )
 
 
