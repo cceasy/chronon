@@ -941,9 +941,22 @@ def fetch(conf, repo, hub_url, use_auth, format, force, fetcher_url, schema, key
     else:
         endpoint = "/v1/fetch/{conf_type}".format(conf_type=conf_type[:-1])
     if schema:
-        if conf_type != "joins":
-            raise ValueError("Schema fetch is only supported for joins")
-        endpoint = f"/v1/join/{target}/schema"
+        if conf_type == "joins":
+            endpoint = f"/v1/join/{target}/schema"
+        elif conf_type == "groupbys":
+            endpoint = f"/v1/groupby/{target}/schema"
+        else:
+            raise ValueError("Schema fetch is only supported for joins and groupBys")
+    online_condition = "- The join needs to be online."
+    if conf_type == "groupbys":
+        online_condition = "- The GroupBy needs to be online."
+        if schema:
+            online_condition = (
+                "- The GroupBy must be online=True and uploaded online. "
+                "For offline table schema, use the Iceberg catalog schema via eval."
+            )
+    elif conf_type != "joins":
+        online_condition = "- The target needs to be available from the fetcher."
     headers = {"Content-Type": "application/json"}
     try:
         if schema:
@@ -964,7 +977,7 @@ def fetch(conf, repo, hub_url, use_auth, format, force, fetcher_url, schema, key
         Request failed for url: {url}
         The conditions for a successful fetch are:
         - Metadata has been uploaded to the KV Store (run-adhoc command or schedule command)
-        - The join needs to be online.
+        {online_condition}
         Please verify the above conditions and try again.
         Error: {e}
         """

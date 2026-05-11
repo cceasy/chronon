@@ -25,6 +25,7 @@ import ai.chronon.online._
 import ai.chronon.online.fetcher.Fetcher.{
   AvroResponseValue,
   BaseResponse,
+  GroupBySchemaResponse,
   JoinSchemaResponse,
   Request,
   Response,
@@ -144,6 +145,15 @@ object Fetcher {
                                 valueSchema: String,
                                 schemaHash: String,
                                 valueInfos: Array[JoinCodec.ValueInfo])
+
+  /** Response for a groupBy schema request. The inputSchema and selectedSchema fields are both returned to show schema
+    * shape before and after select expressions, alongside groupByName, keySchema, and valueSchema.
+    */
+  case class GroupBySchemaResponse(groupByName: String,
+                                   keySchema: String,
+                                   valueSchema: String,
+                                   inputSchema: String,
+                                   selectedSchema: String)
 }
 
 private[online] case class FetcherResponseWithTs[T <: BaseResponse](responses: Seq[T], endTs: Long)
@@ -738,6 +748,40 @@ class Fetcher(val kvStore: KVStore,
       }
 
     joinSchemaResponse
+  }
+
+  def fetchGroupBySchema(groupByName: String): Try[GroupBySchemaResponse] = {
+    val startTime = System.currentTimeMillis()
+    val ctx =
+      Metrics.Context(Metrics.Environment.MetaDataFetching, groupBy = groupByName).withSuffix("group_by_schema")
+
+    val groupByConfTry = metadataStore.getConf[api.GroupBy](ConfPathOrName(confName = Some(groupByName)))
+
+    groupByConfTry
+      .flatMap { groupByConf =>
+        if (!groupByConf.metaData.online) {
+          Failure(
+            new IllegalArgumentException(
+              s"GroupBy $groupByName is not online. Fetcher schema is only available for online GroupBys. " +
+                "Use the Iceberg catalog schema via eval for the offline table schema, or enable online=True and upload the GroupBy."))
+        } else {
+          metadataStore.getGroupByServingInfo(groupByName)
+        }
+      }
+      .map { servingInfo =>
+        val response = GroupBySchemaResponse(groupByName,
+                                             servingInfo.keyAvroSchema,
+                                             servingInfo.responseAvroSchema,
+                                             servingInfo.inputAvroSchema,
+                                             servingInfo.selectedAvroSchema)
+        ctx.distribution(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTime)
+        response
+      }
+      .recover { case exception =>
+        logger.error(s"Failed to fetch groupBy schema for $groupByName", exception)
+        ctx.incrementException(exception)
+        throw exception
+      }
   }
 
   private def logControlEvent(encTry: Try[JoinCodec]): Unit = {
