@@ -1350,7 +1350,11 @@ object Driver {
         }
       case None => logger.info("specify a subcommand please")
     }
-    if (shouldExit && !skipExit) {
+    // In cluster deploy mode, avoid System.exit(0) so the YARN ApplicationMaster can
+    // report final status before the JVM shuts down. Without this, YARN sees
+    // "Shutdown hook called before final status was reported" and marks the app as FAILED.
+    val isClusterMode = sys.props.get("spark.submit.deployMode").contains("cluster")
+    if (shouldExit && !skipExit && !isClusterMode) {
       System.exit(0)
     }
   }
