@@ -7,7 +7,9 @@ import ai.chronon.service.handlers.FetchRouterV2;
 import ai.chronon.service.handlers.GroupBySchemaHandler;
 import ai.chronon.service.handlers.JoinListHandler;
 import ai.chronon.service.handlers.JoinSchemaHandler;
+import ai.chronon.service.handlers.StatsDriftHandler;
 import ai.chronon.service.handlers.StatsHandler;
+import ai.chronon.service.handlers.StatsTrailingDriftHandler;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.http.Http2Settings;
@@ -69,6 +71,8 @@ public class FetcherVerticle extends AbstractVerticle {
         router.get("/v1/groupby/:name/schema").handler(new GroupBySchemaHandler(fetcher));
 
         // Set up route for fetching enhanced statistics
+        router.get("/v1/stats/:tableName/trailing-drift").handler(new StatsTrailingDriftHandler(api));
+        router.get("/v1/stats/:tableName/drift").handler(new StatsDriftHandler(api));
         router.get("/v1/stats/:tableName").handler(new StatsHandler(api));
 
         // Health check route
