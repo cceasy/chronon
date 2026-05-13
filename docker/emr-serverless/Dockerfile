@@ -9,6 +9,8 @@
 ARG EMR_BASE_IMAGE=public.ecr.aws/emr-serverless/spark/emr-7.12.0@sha256:7e8008524607d800884d2d6b5f71073b3f9189fd04fbc124b420654c5eb8d39c
 FROM ${EMR_BASE_IMAGE}
 
+LABEL io.zipline.delta-spark.source="https://github.com/zipline-ai/delta/tree/v3.3.2-spark-3.5.3"
+
 ARG DELTA_SPARK_JAR=delta-spark_2.12-3.3.2.jar
 ARG DELTA_LIB_DIR=/usr/share/aws/delta/lib
 

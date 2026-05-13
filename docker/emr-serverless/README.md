@@ -23,9 +23,9 @@ See the [AWS custom images guide](https://docs.aws.amazon.com/emr/latest/EMR-Ser
 ## How to use it
 
 The patched `delta-spark` jar is committed alongside this Dockerfile
-(sourced from the [zipline-ai/delta](https://github.com/zipline-ai/delta)
-fork). Customers don't need to build the jar themselves — just build the
-image and push it to their own ECR.
+(built from the [zipline-ai/delta](https://github.com/zipline-ai/delta)
+fork — branch `v3.3.2-spark-3.5.3`). Customers don't need to build the
+jar themselves — just build the image and push it to their own ECR.
 
 The customer flow assumes `infra-aws-prod` is wired with the
 `emr_custom_image_version` Terraform variable. Setting that variable
@@ -35,6 +35,19 @@ attaches an ECR repo policy granting EMR Serverless pull access scoped to
 that app. The canonical `zipline-emr-<customer_name>` application is left
 untouched, so paved-path workflows keep running on the default image until
 you explicitly opt them in.
+
+### Quick start
+
+[`bootstrap.sh`](./bootstrap.sh) wraps steps 1-2 (ECR create, build, push)
+into a single command. Use the same `<version-tag>` you'll put in tfvars.
+
+```bash
+./bootstrap.sh <customer-name> v3.3.2-spark-3.5.3
+```
+
+Then continue with step 3 below.
+
+### Step-by-step
 
 1. **Create the ECR repo (one-time).**
    ```bash
@@ -68,7 +81,8 @@ you explicitly opt them in.
    ```
    `--platform linux/amd64` is required when building on Apple Silicon
    (workers default to `x86_64`). `<tag>` must match the value you'll put in
-   `emr_custom_image_version`.
+   `emr_custom_image_version`. Convention: use the source branch name,
+   e.g. `v3.3.2-spark-3.5.3`.
 
 3. **Apply infra.** In `infra-aws-prod`, set
    `emr_custom_image_version = "<tag>"` in your tfvars and run
@@ -82,6 +96,14 @@ you explicitly opt them in.
 
 5. **Run jobs.** The next backfill / job submission on an opted-in team
    starts the sibling app, pulls the image, and resolves the digest.
+
+### Rebuilding the patched delta-spark jar
+
+The bundled `delta-spark_2.12-3.3.2.jar` is the artifact of
+`build/sbt -DsparkVersion=3.5 'project spark' package` against
+[zipline-ai/delta@v3.3.2-spark-3.5.3](https://github.com/zipline-ai/delta/tree/v3.3.2-spark-3.5.3).
+When that branch gets new patches, rebuild and commit the new jar in its
+place.
 
 ### Updating to a new version
 
