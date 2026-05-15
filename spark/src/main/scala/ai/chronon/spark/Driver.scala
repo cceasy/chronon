@@ -1184,10 +1184,8 @@ object Driver {
       }
       if (isAllPartitionsPresent) {
         logger.info(s"All partitions ${partitionNames} are present.")
-        sys.exit(0)
       } else {
-        logger.info(s"Not all partitions ${partitionNames} are present.")
-        sys.exit(1)
+        throw new RuntimeException(s"Not all partitions ${partitionNames} are present.")
       }
 
     }
