@@ -533,6 +533,54 @@ def test_compile_never_leaves_namespace_placeholder_in_thriftjson(tmp_path, monk
     _assert_no_namespace_placeholder_in_compiled(tmp_path / "compiled")
 
 
+def test_compile_preserves_nested_left_join_source_name(tmp_path, monkeypatch):
+    """A JoinSource used as Join.left should carry the nested join's compiled
+    metadata name into the compiled thriftjson so downstream planning resolves
+    the upstream join table instead of "<namespace>.null"."""
+    _scaffold_repo(tmp_path)
+    _write(
+        tmp_path / "joins" / "sample_team" / "left_join_source.py",
+        dedent(
+            """
+            from ai.chronon.types import EventSource, Join, JoinSource, Query, selects
+
+            join1_v1 = Join(
+                left=EventSource(
+                    table="external.left_events",
+                    query=Query(
+                        selects=selects(user_id="user_id"),
+                        time_column="ts",
+                    ),
+                ),
+                right_parts=[],
+                version=1,
+            )
+
+            join2_v1 = Join(
+                left=JoinSource(
+                    join=join1_v1,
+                    query=Query(
+                        selects=selects(user_id="user_id"),
+                        time_column="ts",
+                    ),
+                ),
+                right_parts=[],
+                version=1,
+            )
+            """
+        ).strip(),
+    )
+
+    _run_compile(tmp_path, monkeypatch)
+
+    compiled_path = tmp_path / "compiled" / "joins" / "sample_team" / "left_join_source.join2_v1__1"
+    compiled = json.loads(compiled_path.read_text())
+    nested_metadata = compiled["left"]["joinSource"]["join"]["metaData"]
+
+    assert nested_metadata["name"] == "sample_team.left_join_source.join1_v1__1"
+    assert nested_metadata["outputNamespace"] == "sample_ns"
+
+
 def test_compile_fails_when_config_has_no_output_namespace(tmp_path, monkeypatch):
     """If a config has no outputNamespace and the team has no default, compile must fail."""
     teams_py = dedent(

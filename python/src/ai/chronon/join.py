@@ -406,9 +406,14 @@ def Join(
         f"Version must be an integer or None, but found {type(version).__name__}"
     )
 
+    # Normalize before deepcopy so a left JoinSource can resolve the nested
+    # join's metadata name from its defining module. Without this, the copied
+    # inner join can keep a null name and later resolve to "<namespace>.null".
+    normalized_left = utils.normalize_source(left, output_namespace)
+
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
-    updated_left = copy.deepcopy(left)
+    updated_left = copy.deepcopy(normalized_left)
     if left.events and left.events.query.selects:
         assert "ts" not in left.events.query.selects.keys(), (
             "'ts' is a reserved key word for Chronon, please specify the expression in timeColumn"
